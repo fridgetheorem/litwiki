@@ -1,0 +1,31 @@
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+# Localhost only. Expose to the tailnet with: tailscale serve --bg 8080
+http://127.0.0.1:8080, http://localhost:8080 {
+	encode gzip
+	handle_path /_pdfs/* {
+		root * /home/user/vault/_pdfs
+		# Stored web snapshots must not run scripts on the wiki's origin.
+		header Content-Security-Policy "sandbox"
+		file_server
+	}
+	handle {
+		root * /home/user/litwiki/site/current
+		file_server
+	}
+	handle_errors {
+		rewrite * /404.html
+		root * /home/user/litwiki/site/current
+		file_server
+	}
+	log {
+		output file /home/user/litwiki/logs/caddy.log {
+			roll_size 5MiB
+			roll_keep 2
+		}
+	}
+}
