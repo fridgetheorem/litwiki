@@ -48,15 +48,24 @@ def update_home(cfg) -> None:
 
     rows = con.execute("SELECT status, COUNT(*) n FROM items WHERE status!='child' GROUP BY status").fetchall()
     counts = {r["status"]: r["n"] for r in rows}
-    skipped = con.execute("SELECT key, data, note FROM items WHERE status IN ('skipped','failed') AND note IS NOT NULL").fetchall()
+    flagged = con.execute("SELECT key, data, note, page FROM items WHERE note LIKE 'needs_pdf%' ORDER BY note").fetchall()
+    skipped = con.execute("SELECT key, data, note FROM items WHERE status='failed' AND note IS NOT NULL").fetchall()
     import json
     lines = [
         "| Zotero items | count |", "|---|---|",
         *[f"| {k} | {n} |" for k, n in sorted(counts.items())], "",
         f"LLM spend this month: **${spent(con, 'month'):.2f}** of ${cfg['budget']['monthly_usd']:.0f}",
-        "", "## Items without a page", "",
-        "These have no file in Zotero cloud storage (and no abstract), or failed to ingest.", "",
+        "", f"## Missing PDFs ({len(flagged)})", "",
+        "No file in Zotero cloud storage. Pages marked *abstract-only* were summarised from the abstract; "
+        "the rest have no page yet. Attach a PDF in Zotero (and let it sync) then run `litwiki redo KEY`.", "",
     ]
+    for r in flagged:
+        d = json.loads(r["data"])
+        title = d.get("title") or d.get("filename") or r["key"]
+        page = f" → [[{r['page'].removesuffix('.md')}|page]]" if r["page"] else ""
+        lines.append(f"- [{title}](zotero://select/library/items/{r['key']}) `{r['key']}` — "
+                     f"{'abstract-only' if r['page'] else 'no page'}{page}")
+    lines += ["", "## Failed", ""]
     for r in skipped:
         d = json.loads(r["data"])
         lines.append(f"- [{d.get('title') or d.get('filename') or r['key']}](zotero://select/library/items/{r['key']}) — {r['note']}")

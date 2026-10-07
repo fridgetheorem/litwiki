@@ -95,7 +95,7 @@ def frontmatter(meta: dict, source: str, pdf_rel, concepts: list[str], key: str,
         fm["zotero_tags"] = meta.get("zotero_tags", [])
         fm["collections"] = meta.get("collections", [])
     fm.update({"pdf": pdf_rel, "concepts": concepts, "ingested": date.today().isoformat(),
-               "fulltext": fulltext, "claims_verified": f"{stats['ok']}/{stats['total']}", "status": "auto"})
+               "fulltext": fulltext, "needs_pdf": pdf_rel is None, "claims_verified": f"{stats['ok']}/{stats['total']}", "status": "auto"})
     return fm
 
 
@@ -164,7 +164,7 @@ def summarise_and_write(cfg, *, key: str, meta: dict, pages, unit, pdf_rel, sour
     else:
         # No (usable) full text, e.g. a scanned PDF: summarise from the abstract instead.
         if len(meta.get("abstract") or "") < 200:
-            raise NoContent("no full text (file missing from Zotero storage or unreadable) and no abstract")
+            raise NoContent("needs_pdf: no file in Zotero storage (or unreadable) and no abstract")
         unit, pages = "abstract", [meta.get("abstract", "")]
         text, truncated = f"=== [abstract 1] ===\n{pages[0] or '(no abstract)'}", False
 
@@ -276,8 +276,9 @@ def ingest_zotero(cfg, limit: int | None = None) -> dict:
                 pages, unit, pdf_rel = zotero_document(cfg, con, d)
                 page = summarise_and_write(cfg, key=d["key"], meta=meta, pages=pages, unit=unit, pdf_rel=pdf_rel,
                                            source="zotero", purpose="summary:backfill" if backlog else "summary:new")
-            con.execute("UPDATE items SET status='done', page=?, note=NULL, updated=datetime('now') WHERE key=?",
-                        (page, d["key"]))
+            pfm, _ = read_page(cfg["vault"] / page)
+            con.execute("UPDATE items SET status='done', page=?, note=?, updated=datetime('now') WHERE key=?",
+                        (page, "needs_pdf: abstract-only page" if pfm.get("needs_pdf") else None, d["key"]))
             done += 1
         except BudgetExceeded:
             break
