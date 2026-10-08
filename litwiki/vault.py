@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .common import get_block, read_page, replace_block, slugify, write_page
 
-PAPERS, CONCEPTS, DIGESTS, PDFS = "papers", "concepts", "digests", "_pdfs"
+PAPERS, CONCEPTS, DIGESTS, PDFS, REVIEWS = "papers", "concepts", "digests", "_pdfs", "reviews"
 
 
 def concepts(vault: Path) -> dict[str, dict]:
@@ -17,6 +17,41 @@ def concepts(vault: Path) -> dict[str, dict]:
         fm.setdefault("title", p.stem)
         out[p.stem] = fm
     return out
+
+
+def reviews(vault: Path) -> dict[str, dict]:
+    """slug -> frontmatter (+ 'path', 'text' = the page body you wrote) for every review page."""
+    out = {}
+    for p in sorted((vault / REVIEWS).glob("*.md")):
+        fm, body = read_page(p)
+        fm.update(path=p, text=body)
+        fm.setdefault("title", p.stem)
+        out[p.stem] = fm
+    return out
+
+
+def create_review(vault: Path, title: str) -> str:
+    """Scaffold reviews/<slug>.md for you to fill in (research question, scope, search terms)."""
+    slug = slugify(title, 50)
+    path = vault / REVIEWS / f"{slug}.md"
+    if path.exists():
+        return slug
+    fm = {
+        "title": title,
+        "search_terms": [],          # phrases searched on arXiv + OpenAlex; add several, 1-4 words each
+        "arxiv_categories": [],      # optional, e.g. cs.CR, cs.SE
+        "since_year": date.today().year - 5,
+        "max_per_term": 100,         # candidates fetched per term per source
+        "exclude": "",               # topics / paper types to score down, in plain words
+        "created": date.today().isoformat(),
+    }
+    body = (f"# {title}\n\n## Research question\n\n_What is this review trying to find out?_\n\n"
+            "## Scope\n\n_What is in scope, and what is not. Candidates are scored against this text._\n\n"
+            f"## How to use\n\nFill in `search_terms` above, then run `litwiki search {slug}`. "
+            f"A digest appears under `digests/`; tick items to ingest them. Papers ingested from it are tagged "
+            f"`#review/{slug}`.\n")
+    write_page(path, fm, body)
+    return slug
 
 
 def concept_catalog(vault: Path) -> str:

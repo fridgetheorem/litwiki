@@ -120,6 +120,13 @@ Also weigh venue quality: subtract 2-3 points for obscure regional journals, pre
 student-project-like work; established security/SE/ML/formal-methods venues and substantive arXiv preprints
 need no penalty."""
 
+REVIEW_TRIAGE_SYSTEM = """You screen literature candidates for ONE specific literature review. The review's
+research question, scope and exclusions are given. For each candidate, score relevance to THIS REVIEW 0-10:
+9-10 = directly addresses the research question, likely a core reference; 6-8 = clearly relevant evidence or
+background; 3-5 = tangential; 0-2 = off-topic. Be strict: keyword overlap alone is not relevance, and anything
+matching the exclusions should score low. Penalise low-substance items. Subtract 2-3 points for obscure
+regional journals, predatory-looking venues or student-project-like work."""
+
 TRIAGE_SCHEMA = {
     "type": "object",
     "properties": {"items": {"type": "array", "items": {
@@ -134,14 +141,24 @@ TRIAGE_SCHEMA = {
 }
 
 
-def triage(cfg, cands: list[dict]) -> None:
+def review_context(rv: dict) -> str:
+    text = re.sub(r"## How to use.*", "", rv.get("text", ""), flags=re.S).strip()
+    excl = f"\nEXCLUDE / SCORE DOWN: {rv['exclude']}" if rv.get("exclude") else ""
+    return f"REVIEW: {rv['title']}\n{text}{excl}\nSEARCH TERMS: {', '.join(rv.get('search_terms') or [])}"
+
+
+def triage(cfg, cands: list[dict], review: dict | None = None) -> None:
     catalog = vault.concept_catalog(cfg["vault"])
+    system, context = TRIAGE_SYSTEM, f"CONCEPT CATALOG:\n{catalog}"
+    if review:
+        system = REVIEW_TRIAGE_SYSTEM
+        context = f"{review_context(review)}\n\nCONCEPT CATALOG (for the 'concepts' field only):\n{catalog}"
     for i in range(0, len(cands), 40):
         batch = cands[i:i + 40]
         listing = "\n\n".join(
             f"[{n}] {c['title']}\nVenue: {c['venue']} ({c['kind']})\n{c['abstract'][:700]}"
             for n, c in enumerate(batch))
-        out = claude(cfg, f"CONCEPT CATALOG:\n{catalog}\n\nCANDIDATES:\n{listing}", system=TRIAGE_SYSTEM,
+        out = claude(cfg, f"{context}\n\nCANDIDATES:\n{listing}", system=system,
                      model=cfg["llm"]["triage_model"], schema=TRIAGE_SCHEMA, purpose="triage",
                      ref=f"batch{i // 40}")
         for r in out["items"]:

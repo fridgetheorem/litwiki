@@ -83,7 +83,7 @@ def zotero_meta(con, d: dict) -> dict:
     }
 
 
-MANAGED_TAG_PREFIXES = ("col/", "zt/", "concept/", "source/")
+MANAGED_TAG_PREFIXES = ("col/", "zt/", "concept/", "source/", "review/")
 
 
 def _tag_slug(text: str) -> str:
@@ -102,6 +102,7 @@ def managed_tags(fm: dict) -> list[str]:
             tags += ["col/" + "/".join(segs[:i]) for i in range(1, len(segs) + 1)]
     tags += [f"zt/{t}" for t in map(_tag_slug, fm.get("zotero_tags") or []) if t]
     tags += [f"concept/{c}" for c in fm.get("concepts") or []]
+    tags += [f"review/{r}" for r in fm.get("reviews") or []]
     if fm.get("source"):
         tags.append(f"source/{_tag_slug(str(fm['source']).split(':')[0])}")
     return list(dict.fromkeys(tags))

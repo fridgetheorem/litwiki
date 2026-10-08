@@ -81,6 +81,12 @@ def cmd_retag(cfg, a):
         print(f"retagged {retag_vault(cfg)} pages")
 
 
+def cmd_review_new(cfg, a):
+    from . import vault
+    slug = vault.create_review(cfg["vault"], " ".join(a.title))
+    print(f"vault/reviews/{slug}.md created: fill in the question, scope and search_terms")
+
+
 def cmd_notify_test(cfg, a):
     from .notify import notify
     notify("Test notification — Discord is wired up.")
@@ -134,6 +140,9 @@ def main():
     sp.add_argument("keys", nargs="+")
     sp.set_defaults(f=cmd_redo)
     sub.add_parser("retag", help="refresh Obsidian tags on all paper pages (no LLM)").set_defaults(f=cmd_retag)
+    sp = sub.add_parser("review-new", help="scaffold a literature-review page in the vault")
+    sp.add_argument("title", nargs="+")
+    sp.set_defaults(f=cmd_review_new)
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)
