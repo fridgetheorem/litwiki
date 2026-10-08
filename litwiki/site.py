@@ -35,10 +35,13 @@ def update_home(cfg) -> None:
     for p in papers[:15]:
         fm, _ = read_page(p)
         recent.append(f"- [[papers/{p.stem}|{fm.get('title', p.stem)}]] ({fm.get('year') or 'n.d.'})")
+    rvs = vault.reviews(v)
+    review_lines = [f"- [[reviews/{s}|{fm['title']}]]" for s, fm in rvs.items()]
     digests = sorted((v / vault.DIGESTS).glob("*.md"), reverse=True)[:7]
     dig = [f"- [[digests/{p.stem}|{p.stem}]]" for p in digests]
     block = "\n".join([
         f"**{len(papers)} papers · {len(cs)} concepts**", "",
+        "## Literature reviews", "", *(review_lines or ["_none yet — `litwiki review-new <title>`_"]), "",
         "## Recent digests", "", *(dig or ["_none yet_"]), "",
         "## Concepts", "", *concept_lines, "",
         "## Recently added papers", "", *(recent or ["_none yet_"]),
