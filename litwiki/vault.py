@@ -43,11 +43,12 @@ def create_review(vault: Path, title: str) -> str:
         "since_year": date.today().year - 5,
         "max_per_term": 100,         # candidates fetched per term per source
         "exclude": "",               # topics / paper types to score down, in plain words
+        "run": False,                # set to true in Obsidian to run a search at the next hourly job
         "created": date.today().isoformat(),
     }
     body = (f"# {title}\n\n## Research question\n\n_What is this review trying to find out?_\n\n"
             "## Scope\n\n_What is in scope, and what is not. Candidates are scored against this text._\n\n"
-            f"## How to use\n\nFill in `search_terms` above, then run `litwiki search {slug}`. "
+            f"## How to use\n\nFill in `search_terms` above, then set `run: true` (or run `litwiki search {slug}`). "
             f"A digest appears under `digests/`; tick items to ingest them. Papers ingested from it are tagged "
             f"`#review/{slug}`.\n")
     write_page(path, fm, body)

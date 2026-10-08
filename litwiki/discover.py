@@ -343,6 +343,25 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
     return {"raw": len(found), "new": len(fresh), "digest": len(picked), "digest_page": path}
 
 
+def run_requested_searches(cfg) -> dict:
+    """Run searches for reviews whose page has `run: true`; the flag is cleared first so a crash can't loop."""
+    out = {}
+    for slug, rv in vault.reviews(cfg["vault"]).items():
+        if rv.get("run") is not True:
+            continue
+        fm, body = read_page(rv["path"])
+        fm["run"] = False
+        write_page(rv["path"], fm, body)
+        try:
+            out[slug] = search_review(cfg, slug)
+        except SystemExit as e:  # e.g. no search_terms yet
+            notify(f"Review '{slug}': search not run — {e}", level="warn")
+        except Exception:
+            log.exception("review search failed for %s", slug)
+            notify(f"Review '{slug}': search failed, see logs/hourly.log", level="error")
+    return out
+
+
 # ---------- approvals ----------
 
 TICKED = re.compile(r"^\s*- \[[xX]\] .*?<!-- cand:(\S+) -->", re.M)

@@ -102,7 +102,7 @@ def cmd_notify_test(cfg, a):
 
 def cmd_hourly(cfg, a):
     """Zotero sync -> ingest new/approved items -> rebuild site if the vault changed."""
-    from .discover import ingest_approved
+    from .discover import ingest_approved, run_requested_searches
     from .health import check_health
     from .ingest import ingest_zotero
     from .notify import notify
@@ -110,6 +110,9 @@ def cmd_hourly(cfg, a):
     from .zotero import sync
     with run_lock():
         s = sync(cfg)
+        searches = run_requested_searches(cfg)
+        if searches:
+            log.info("hourly: review searches %s", searches)
         approved = ingest_approved(cfg)
         z = ingest_zotero(cfg)
         if z["failed"] or approved.get("failed"):
