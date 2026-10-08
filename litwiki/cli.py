@@ -75,6 +75,12 @@ def cmd_redo(cfg, a):
         print(f"{key}: requeued (was {row['page']})")
 
 
+def cmd_retag(cfg, a):
+    from .ingest import retag_vault
+    with run_lock():
+        print(f"retagged {retag_vault(cfg)} pages")
+
+
 def cmd_notify_test(cfg, a):
     from .notify import notify
     notify("Test notification — Discord is wired up.")
@@ -127,6 +133,7 @@ def main():
     sp = sub.add_parser("redo", help="delete + requeue generated pages by Zotero key")
     sp.add_argument("keys", nargs="+")
     sp.set_defaults(f=cmd_redo)
+    sub.add_parser("retag", help="refresh Obsidian tags on all paper pages (no LLM)").set_defaults(f=cmd_retag)
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)

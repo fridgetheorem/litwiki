@@ -83,6 +83,43 @@ def zotero_meta(con, d: dict) -> dict:
     }
 
 
+MANAGED_TAG_PREFIXES = ("col/", "zt/", "concept/", "source/")
+
+
+def _tag_slug(text: str) -> str:
+    """Obsidian tag segment: letters, digits, _ and -, no spaces; must not be all digits."""
+    t = re.sub(r"[^\w-]+", "-", text.replace("'", "").replace("\u2019", "").lower(), flags=re.UNICODE).strip("-_")
+    return t if t and not t.isdigit() else ""
+
+
+def managed_tags(fm: dict) -> list[str]:
+    """Tags derived from frontmatter, in Obsidian's native `tags` property so tag search / the
+    tag pane work. Nested (a/b/c): searching `tag:#col/masters` also matches `col/masters/thesis/...`."""
+    tags = []
+    for c in fm.get("collections") or []:
+        segs = [_tag_slug(x) for x in str(c).split(" / ")]
+        if all(segs):
+            tags += ["col/" + "/".join(segs[:i]) for i in range(1, len(segs) + 1)]
+    tags += [f"zt/{t}" for t in map(_tag_slug, fm.get("zotero_tags") or []) if t]
+    tags += [f"concept/{c}" for c in fm.get("concepts") or []]
+    if fm.get("source"):
+        tags.append(f"source/{_tag_slug(str(fm['source']).split(':')[0])}")
+    return list(dict.fromkeys(tags))
+
+
+def apply_tags(fm: dict) -> bool:
+    """Refresh the managed tags in fm['tags'], keeping any tags you added yourself. True if changed."""
+    old = fm.get("tags") or []
+    if isinstance(old, str):
+        old = [old]
+    mine = [t for t in old if not str(t).startswith(MANAGED_TAG_PREFIXES)]
+    new = mine + managed_tags(fm)
+    if new == old:
+        return False
+    fm["tags"] = new
+    return True
+
+
 def frontmatter(meta: dict, source: str, pdf_rel, concepts: list[str], key: str, stats: dict,
                 fulltext: bool = True) -> dict:
     fm = {
@@ -96,6 +133,7 @@ def frontmatter(meta: dict, source: str, pdf_rel, concepts: list[str], key: str,
         fm["collections"] = meta.get("collections", [])
     fm.update({"pdf": pdf_rel, "concepts": concepts, "ingested": date.today().isoformat(),
                "fulltext": fulltext, "needs_pdf": pdf_rel is None, "claims_verified": f"{stats['ok']}/{stats['total']}", "status": "auto"})
+    apply_tags(fm)
     return fm
 
 
@@ -230,6 +268,7 @@ def refresh_metadata(cfg, con, row) -> None:
         for k in ("title", "authors", "year", "venue", "doi", "url", "zotero_tags", "collections"):
             if meta.get(k) not in (None, "") and fm.get(k) != meta[k]:
                 fm[k], changed = meta[k], True
+        changed = apply_tags(fm) or changed
         if changed:
             write_page(path, fm, body)
     con.execute("UPDATE items SET status='done' WHERE key=?", (row["key"],))
@@ -265,6 +304,7 @@ def ingest_zotero(cfg, limit: int | None = None) -> dict:
                 if fm.get("fulltext", True):
                     _, body = read_page(path)
                     fm.update(zotero_key=d["key"], zotero_tags=meta["zotero_tags"], collections=meta["collections"])
+                    apply_tags(fm)
                     write_page(path, fm, body)
                 else:
                     page = None if fm.get("status") != "auto" else page  # user-edited: keep, add a new page
@@ -290,3 +330,14 @@ def ingest_zotero(cfg, limit: int | None = None) -> dict:
             failed += 1
         con.commit()
     return {"done": done, "failed": failed}
+
+
+def retag_vault(cfg) -> int:
+    """Recompute managed tags on every paper page (frontmatter only; bodies untouched)."""
+    n = 0
+    for path in sorted((cfg["vault"] / vault.PAPERS).glob("*.md")):
+        fm, body = read_page(path)
+        if fm and apply_tags(fm):
+            write_page(path, fm, body)
+            n += 1
+    return n
