@@ -157,6 +157,11 @@ def zotero_document(cfg, con, d: dict):
         return None, None, None
     if ext == ".html" and dest.read_bytes()[:2] == b"PK":  # zipped snapshot
         import io, zipfile
+        if not zipfile.is_zipfile(dest):  # truncated/corrupt download: fetch once more
+            dest.unlink()
+            if not Zotero(cfg).download_file(att["key"], dest) or not zipfile.is_zipfile(dest):
+                dest.unlink(missing_ok=True)
+                raise NoContent(f"snapshot {att['key']} is a corrupt zip")
         with zipfile.ZipFile(io.BytesIO(dest.read_bytes())) as zf:
             name = max((n for n in zf.namelist() if n.endswith((".html", ".htm"))), key=lambda n: zf.getinfo(n).file_size)
             dest.write_bytes(zf.read(name))
