@@ -81,6 +81,13 @@ def cmd_retag(cfg, a):
         print(f"retagged {retag_vault(cfg)} pages")
 
 
+def cmd_search(cfg, a):
+    from .discover import search_review
+    with run_lock():
+        r = search_review(cfg, a.review, since_year=a.since, extra_terms=a.terms)
+    print(r)
+
+
 def cmd_review_new(cfg, a):
     from . import vault
     slug = vault.create_review(cfg["vault"], " ".join(a.title))
@@ -140,6 +147,11 @@ def main():
     sp.add_argument("keys", nargs="+")
     sp.set_defaults(f=cmd_redo)
     sub.add_parser("retag", help="refresh Obsidian tags on all paper pages (no LLM)").set_defaults(f=cmd_retag)
+    sp = sub.add_parser("search", help="search for papers for a review (reviews/<slug>.md) and write a digest")
+    sp.add_argument("review", help="review slug, e.g. grammar-based-fuzzing")
+    sp.add_argument("--since", type=int, help="earliest publication year (default: the page's since_year)")
+    sp.add_argument("--terms", nargs="+", help="extra one-off search terms")
+    sp.set_defaults(f=cmd_search)
     sp = sub.add_parser("review-new", help="scaffold a literature-review page in the vault")
     sp.add_argument("title", nargs="+")
     sp.set_defaults(f=cmd_review_new)
