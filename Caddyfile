@@ -4,8 +4,10 @@
 	persist_config off
 }
 
-# Localhost only. Expose to the tailnet with: tailscale serve --bg 8080
-http://127.0.0.1:8080, http://localhost:8080 {
+# Listens on localhost only, for any Host header (tailscale serve forwards the tailnet
+# hostname). Expose to the tailnet with: sudo tailscale serve --bg --http=8080 http://127.0.0.1:8080
+http://:8080 {
+	bind 127.0.0.1
 	encode gzip
 	handle_path /_pdfs/* {
 		root * /home/user/vault/_pdfs
