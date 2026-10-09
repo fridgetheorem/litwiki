@@ -85,6 +85,7 @@ def _fingerprint(cfg) -> str:
             continue
         st = p.stat()
         h.update(f"{rel}:{st.st_mtime_ns}:{st.st_size}\n".encode())
+    h.update(repr(cfg.get("clusters")).encode())
     for f in ("mkdocs.yml", "hooks.py"):
         h.update((SITE / f).read_bytes())
     return h.hexdigest()
@@ -109,6 +110,11 @@ def _build(cfg, force: bool) -> dict:
     if proc.returncode != 0:
         shutil.rmtree(out, ignore_errors=True)
         raise RuntimeError(f"mkdocs build failed: {proc.stderr[-1500:]}")
+    try:  # the paper map is an extra: never let it break the site build
+        from .cluster import write_page
+        write_page(cfg, out)
+    except Exception:
+        log.exception("paper map failed")
     # Atomic swap: Caddy serves site/current -> build-<ts>.
     link = SITE / "current"
     tmp = SITE / "current.tmp"

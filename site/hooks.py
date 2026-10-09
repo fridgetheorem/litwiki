@@ -107,12 +107,13 @@ def on_page_markdown(markdown: str, page, config, files):
     return markdown
 
 
-_APP_LINK = ('<a class="md-header__button" href="/app/" title="Add papers, approve digests, edit notes" '
-             'style="align-self:center;font-size:.8rem;font-weight:600;text-decoration:none;color:inherit;'
-             'padding:0 .8rem">Manage</a>\n        ')
+_LINK_STYLE = ('style="align-self:center;font-size:.8rem;font-weight:600;text-decoration:none;color:inherit;'
+               'padding:0 .8rem"')
+_APP_LINK = (f'<a class="md-header__button" href="/clusters/" title="Visual map of papers" {_LINK_STYLE}>Map</a>\n        '
+             f'<a class="md-header__button" href="/app/" title="Add papers, approve digests, edit notes" {_LINK_STYLE}>Manage</a>\n        ')
 
 
 def on_post_page(output: str, page, config):
-    """Header link from the wiki to the web UI (the UI's navbar links back to the wiki)."""
+    """Header links from the wiki to the paper map and the web UI (their navbars link back)."""
     marker = '<form class="md-header__option" data-md-component="palette">'
     return output.replace(marker, _APP_LINK + marker, 1) if marker in output else output
