@@ -105,3 +105,14 @@ def on_page_markdown(markdown: str, page, config, files):
             f"- [{_titles.get(s, s)}]({posixpath.relpath(s, posixpath.dirname(here) or '.')})" for s in back)
         markdown += f"\n\n---\n\n## Backlinks\n\n{items}\n"
     return markdown
+
+
+_APP_LINK = ('<a class="md-header__button" href="/app/" title="Add papers, approve digests, edit notes" '
+             'style="align-self:center;font-size:.8rem;font-weight:600;text-decoration:none;color:inherit;'
+             'padding:0 .8rem">Manage</a>\n        ')
+
+
+def on_post_page(output: str, page, config):
+    """Header link from the wiki to the web UI (the UI's navbar links back to the wiki)."""
+    marker = '<form class="md-header__option" data-md-component="palette">'
+    return output.replace(marker, _APP_LINK + marker, 1) if marker in output else output

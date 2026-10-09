@@ -98,7 +98,7 @@ label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
 {% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a>
-<a href="/app/papers">Papers</a><a href="/">Site ↗</a><span class="sp"></span>
+<a href="/app/papers">Papers</a><a href="/">Wiki</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
 
