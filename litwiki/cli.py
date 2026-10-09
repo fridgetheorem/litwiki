@@ -100,11 +100,29 @@ def cmd_notify_test(cfg, a):
     print("sent (check Discord; if DISCORD_WEBHOOK_URL is unset it was only logged)")
 
 
+def cmd_web_queue(cfg, a):
+    """Ingest everything approved or added in the web UI right now, then rebuild the site."""
+    from .discover import ingest_approved
+    from .manual import ingest_manual
+    from .site import build
+    with run_lock():
+        approved = ingest_approved(cfg)
+        manual = ingest_manual(cfg)
+        log.info("web-queue: approved=%s manual=%s", approved, manual)
+    build(cfg)
+
+
+def cmd_serve(cfg, a):
+    from .web import serve
+    serve(cfg)
+
+
 def cmd_hourly(cfg, a):
     """Zotero sync -> ingest new/approved items -> rebuild site if the vault changed."""
     from .discover import ingest_approved, run_requested_searches
     from .health import check_health
     from .ingest import ingest_zotero
+    from .manual import ingest_manual
     from .notify import notify
     from .site import build
     from .zotero import sync
@@ -114,6 +132,9 @@ def cmd_hourly(cfg, a):
         if searches:
             log.info("hourly: review searches %s", searches)
         approved = ingest_approved(cfg)
+        manual = ingest_manual(cfg)
+        approved["failed"] = approved.get("failed", 0) + manual["failed"]
+        approved["done"] = approved.get("done", 0) + manual["done"]
         z = ingest_zotero(cfg)
         if z["failed"] or approved.get("failed"):
             notify(f"Hourly run: {z['failed'] + approved.get('failed', 0)} item(s) failed to ingest. "
@@ -159,10 +180,12 @@ def main():
     sp.add_argument("title", nargs="+")
     sp.set_defaults(f=cmd_review_new)
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
+    sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
+    sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)
     a = p.parse_args()
-    setup_logging(a.cmd if a.cmd in ("hourly", "daily") else "manual")
+    setup_logging(a.cmd if a.cmd in ("hourly", "daily", "serve") else "manual")
     cfg = load_config()
     con = db()
     if not kv_get(con, "installed_at"):

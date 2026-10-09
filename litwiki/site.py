@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from . import vault
-from .common import ROOT, db, get_block, kv_get, kv_set, log, read_page, replace_block, write_page
+from .common import ROOT, db, get_block, kv_get, kv_set, log, read_page, replace_block, run_lock, write_page
 
 SITE = ROOT / "site"
 
@@ -91,6 +91,11 @@ def _fingerprint(cfg) -> str:
 
 
 def build(cfg, force: bool = False) -> dict:
+    with run_lock("build"):  # cron jobs and the web UI may both ask for a build
+        return _build(cfg, force)
+
+
+def _build(cfg, force: bool) -> dict:
     update_home(cfg)
     con = db()
     fp = _fingerprint(cfg)

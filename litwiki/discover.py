@@ -10,8 +10,8 @@ import feedparser
 import requests
 
 from . import vault
-from .common import db, log, read_page, slugify, write_page
-from .ingest import NoContent, apply_tags, fetch_document, summarise_and_write
+from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
+from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
 from .llm import BudgetExceeded, claude
 from .notify import notify
 
@@ -37,19 +37,21 @@ def search_arxiv(terms, cats, since: date, n: int, by_relevance: bool = False) -
         "search_query": q, "sortBy": "relevance" if by_relevance else "submittedDate",
         "sortOrder": "descending", "max_results": n})
     r.raise_for_status()
+    return [c for c in parse_arxiv(r.content) if c["date"] >= since.isoformat()]
+
+
+def parse_arxiv(content: bytes) -> list[dict]:
     ns = {"a": "http://www.w3.org/2005/Atom"}
     out = []
-    for e in ET.fromstring(r.content).findall("a:entry", ns):
+    for e in ET.fromstring(content).findall("a:entry", ns):
         published = e.findtext("a:published", "", ns)[:10]
-        if published < since.isoformat():
-            continue
         aid = e.findtext("a:id", "", ns).rsplit("/abs/", 1)[-1]
         aid = re.sub(r"v\d+$", "", aid)
         out.append({
             "id": f"arxiv:{aid}", "title": " ".join(e.findtext("a:title", "", ns).split()),
             "authors": [a.findtext("a:name", "", ns) for a in e.findall("a:author", ns)],
             "abstract": " ".join(e.findtext("a:summary", "", ns).split()),
-            "date": published, "venue": "arXiv", "year": int(published[:4]),
+            "date": published, "venue": "arXiv", "year": int(published[:4]) if published else None,
             "url": f"https://arxiv.org/abs/{aid}", "pdf_url": f"https://arxiv.org/pdf/{aid}",
             "doi": "", "kind": "preprint",
         })
@@ -80,18 +82,23 @@ def search_openalex(terms, since: date, n: int, mailto: str, by_relevance: bool 
         src = ((w.get("primary_location") or {}).get("source") or {})
         if "arxiv" in (src.get("display_name") or "").lower():
             continue  # covered by the arXiv source
-        doi = (w.get("doi") or "").replace("https://doi.org/", "").lower()
-        oa = w.get("best_oa_location") or {}
-        out.append({
-            "id": f"doi:{doi}" if doi else f"openalex:{w['id'].rsplit('/', 1)[-1]}",
-            "title": w.get("display_name") or "", "abstract": _openalex_abstract(w.get("abstract_inverted_index")),
-            "authors": [a["author"]["display_name"] for a in w.get("authorships", [])[:12]],
-            "date": w.get("publication_date", ""), "year": w.get("publication_year"),
-            "venue": src.get("display_name") or "", "doi": doi,
-            "url": f"https://doi.org/{doi}" if doi else w["id"],
-            "pdf_url": oa.get("pdf_url") or "", "kind": "article",
-        })
+        out.append(openalex_work(w))
     return out
+
+
+def openalex_work(w: dict) -> dict:
+    src = ((w.get("primary_location") or {}).get("source") or {})
+    doi = (w.get("doi") or "").replace("https://doi.org/", "").lower()
+    oa = w.get("best_oa_location") or {}
+    return {
+        "id": f"doi:{doi}" if doi else f"openalex:{w['id'].rsplit('/', 1)[-1]}",
+        "title": w.get("display_name") or "", "abstract": _openalex_abstract(w.get("abstract_inverted_index")),
+        "authors": [a["author"]["display_name"] for a in w.get("authorships", [])[:12]],
+        "date": w.get("publication_date", ""), "year": w.get("publication_year"),
+        "venue": src.get("display_name") or "", "doi": doi,
+        "url": f"https://doi.org/{doi}" if doi else w["id"],
+        "pdf_url": oa.get("pdf_url") or "", "kind": "article",
+    }
 
 
 def read_feeds(feeds, since: date) -> list[dict]:
@@ -367,6 +374,43 @@ def run_requested_searches(cfg) -> dict:
 TICKED = re.compile(r"^\s*- \[[xX]\] .*?<!-- cand:(\S+) -->", re.M)
 
 
+def ingest_candidate(cfg, cid: str, c: dict) -> str:
+    """Fetch (if possible) and summarise one candidate into a paper page; returns the page path.
+    Shared by digest ticks and the web UI's manual adds (c['manual'])."""
+    v = cfg["vault"]
+    pages = unit = pdf_rel = None
+    if c.get("local_file"):  # uploaded PDF, already in the vault
+        pdf_rel = c["local_file"]
+        pages, unit = load_document(cfg, v / pdf_rel)
+    else:
+        src = c.get("pdf_url") or (c["url"] if c["kind"] == "blog" else "")
+        if src:
+            try:
+                pages, unit, pdf_rel = fetch_document(cfg, src, slugify(cid, 80), guard=bool(c.get("manual")))
+            except Exception as e:
+                log.warning("fetch %s failed (%s); falling back to abstract", src, e)
+    meta = {k: c.get(k) for k in ("title", "authors", "year", "venue", "doi", "url", "abstract")}
+    meta["authors"] = meta["authors"] or []
+    if c.get("title_from_doc"):  # title is just a filename: let the summary supply the printed one
+        meta["item_type"] = "attachment"
+    source = f"{'manual' if c.get('manual') else 'discovery'}:{c['kind']}"
+    page = summarise_and_write(cfg, key=cid, meta=meta, pages=pages, unit=unit, pdf_rel=pdf_rel,
+                               source=source, purpose="summary:manual" if c.get("manual") else "summary:discovery")
+    pfm, pbody = read_page(v / page)
+    changed = False
+    if c.get("review"):
+        pfm["reviews"] = sorted({*pfm.get("reviews", []), c["review"]})
+        changed = True
+    if c.get("concept") and (c["concept"] not in (pfm.get("concepts") or [])):
+        pfm["concepts"] = [*(pfm.get("concepts") or []), c["concept"]]
+        vault.add_backlink(v, c["concept"], page, pfm.get("title", meta["title"]), pfm.get("year"), "added manually")
+        changed = True
+    if changed:
+        apply_tags(pfm)
+        write_page(v / page, pfm, pbody)
+    return page
+
+
 def ingest_approved(cfg) -> dict:
     con = db()
     v = cfg["vault"]
@@ -378,22 +422,8 @@ def ingest_approved(cfg) -> dict:
                 continue
             c = json.loads(row["data"])
             try:
-                pages = unit = pdf_rel = None
-                src = c.get("pdf_url") or (c["url"] if c["kind"] == "blog" else "")
-                if src:
-                    try:
-                        pages, unit, pdf_rel = fetch_document(cfg, src, slugify(cid, 80))
-                    except Exception as e:
-                        log.warning("fetch %s failed (%s); falling back to abstract", src, e)
-                meta = {k: c.get(k) for k in ("title", "authors", "year", "venue", "doi", "url", "abstract")}
-                page = summarise_and_write(cfg, key=cid, meta=meta, pages=pages, unit=unit, pdf_rel=pdf_rel,
-                                           source=f"discovery:{c['kind']}", purpose="summary:discovery")
+                page = ingest_candidate(cfg, cid, c)
                 con.execute("UPDATE candidates SET status='ingested' WHERE id=?", (cid,))
-                if c.get("review"):
-                    pfm, pbody = read_page(v / page)
-                    pfm["reviews"] = sorted({*pfm.get("reviews", []), c["review"]})
-                    apply_tags(pfm)
-                    write_page(v / page, pfm, pbody)
                 _mark_in_digest(p, cid, page)
                 done += 1
             except BudgetExceeded:
@@ -409,9 +439,27 @@ def ingest_approved(cfg) -> dict:
     return {"done": done, "failed": failed}
 
 
+def tick_items(cfg, cids: list[str]) -> int:
+    """Tick `- [ ]` -> `- [x]` for the given candidates in their digest files (what ticking in Obsidian does)."""
+    con, n = db(), 0
+    for cid in cids:
+        row = con.execute("SELECT digest FROM candidates WHERE id=? AND status='digested'", (cid,)).fetchone()
+        if not row or not re.fullmatch(r"digests/[\w.\-]+\.md", row["digest"] or ""):
+            continue
+        path = cfg["vault"] / row["digest"]
+        with run_lock("digest"):
+            text = path.read_text(encoding="utf-8")
+            new, k = re.subn(rf"^(\s*- )\[ \]( .*?<!-- cand:{re.escape(cid)} -->)", r"\1[x]\2", text, count=1, flags=re.M)
+            if k:
+                write_atomic(path, new)
+                n += 1
+    return n
+
+
 def _mark_in_digest(path, cid, page_rel):
     """Link the new page from the digest line so the user can see it was ingested."""
-    fm, body = read_page(path)
     marker = f"<!-- cand:{cid} -->"
-    body = body.replace(marker, f"→ [[{page_rel.removesuffix('.md')}|ingested]] {marker}", 1)
-    write_page(path, fm, body)
+    with run_lock("digest"):  # the web UI also edits digests (ticking items)
+        fm, body = read_page(path)
+        body = body.replace(marker, f"→ [[{page_rel.removesuffix('.md')}|ingested]] {marker}", 1)
+        write_page(path, fm, body)

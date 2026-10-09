@@ -65,8 +65,23 @@ def _callouts(md: str) -> str:
     return "\n".join(out)
 
 
+def _with_notes(markdown: str, here: str, config) -> str:
+    """Paper pages: embed notes/<stem>.md (written in the web UI or Obsidian) and link to the editor."""
+    stem = posixpath.basename(here).removesuffix(".md")
+    note = ""
+    try:
+        note = FM.sub("", open(os.path.join(config["docs_dir"], "notes", stem + ".md"), encoding="utf-8").read(), 1).strip()
+    except OSError:
+        pass
+    label = "Edit notes" if note else "Add notes"
+    return (markdown.rstrip() + "\n\n## Notes (web)\n\n" + (note + "\n\n" if note else "")
+            + f"[{label}](/app/notes/{stem}){{ .md-button }}\n")
+
+
 def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
+    if here.startswith("papers/"):
+        markdown = _with_notes(markdown, here, config)
 
     def repl(m):
         embed, target, anchor, alias = m.groups()

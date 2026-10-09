@@ -15,6 +15,16 @@ http://:8080 {
 		header Content-Security-Policy "sandbox"
 		file_server
 	}
+	# Web UI (password-protected by the app itself)
+	handle /app/* {
+		request_body {
+			max_size 80MB
+		}
+		reverse_proxy 127.0.0.1:8081
+	}
+	handle /app {
+		redir /app/ 308
+	}
 	handle {
 		root * /home/user/litwiki/site/current
 		file_server

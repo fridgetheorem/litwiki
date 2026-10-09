@@ -170,9 +170,14 @@ def zotero_document(cfg, con, d: dict):
     return pages, unit, rel
 
 
-def fetch_document(cfg, url: str, stem: str):
-    """Fetch an open-access PDF or web page for a discovered item."""
-    r = requests.get(url, timeout=120, headers={"User-Agent": "litwiki/0.1 (personal literature wiki)"})
+def fetch_document(cfg, url: str, stem: str, guard: bool = False):
+    """Fetch an open-access PDF or web page for a discovered item. guard=True (user-supplied
+    URLs) refuses private/loopback/tailnet addresses, including via redirects."""
+    if guard:
+        from .manual import fetch_public
+        r = fetch_public(url, timeout=120)
+    else:
+        r = requests.get(url, timeout=120, headers={"User-Agent": "litwiki/0.1 (personal literature wiki)"})
     r.raise_for_status()
     is_pdf = r.content[:5] == b"%PDF-"
     rel = f"{vault.PDFS}/{stem}{'.pdf' if is_pdf else '.html'}"

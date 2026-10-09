@@ -5,6 +5,7 @@ strict: false
 
 exclude_docs: |
   _pdfs/
+  notes/
   .obsidian/
   .stfolder/
   .stversions/

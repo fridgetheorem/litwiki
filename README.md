@@ -20,6 +20,7 @@ arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian]�
 | `concepts/<slug>.md` | One page per broad concept | You. litwiki only edits between `<!-- litwiki:papers:start/end -->` (append-only list). `search_terms` / `arxiv_categories` / `discover` in the frontmatter steer the daily search. |
 | `reviews/<slug>.md` | One page per literature review: research question, scope, `search_terms`, `since_year`, `exclude` | You. Set `run: true` to search (next hourly run); litwiki resets it. |
 | `digests/YYYY-MM-DD.md`, `digests/search-<review>-<date>.md` | Daily / per-review search digest | Tick `- [x]` to ingest an item (next hourly run). |
+| `notes/<paper-stem>.md` | Your notes on a paper | You, in the web UI or Obsidian. Embedded into the paper page on the site. |
 | `_pdfs/` | PDFs / web snapshots | litwiki. Linked as `[[_pdfs/KEY.pdf#page=7\|p. 7]]` — opens at that page in Obsidian and in the browser. |
 | `index.md`, `status.md` | Home and pipeline status | Auto block only. |
 
@@ -39,6 +40,17 @@ rewrites tags with those prefixes; tags you add yourself are kept. `litwiki reta
 `search_terms`, then set `run: true` (or `litwiki search my-review [--since 2019] [--terms ...]`). It searches
 arXiv + OpenAlex back to `since_year`, scores candidates against your question/scope, and writes a digest to
 tick. Papers ingested from it get `#review/my-review`. Runs are manual only; the daily job is unchanged.
+
+## Web UI (`/app/`)
+Log in at `http://<tailnet-host>:8080/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the static site itself stays open to the tailnet).
+- **Add**: paste DOIs / arXiv IDs / URLs (one per line) or upload PDFs, optionally attaching a review or concept. Items are queued
+  (`candidates`, `digest='web'`) and ingested immediately via `litwiki web-queue` (also swept by the hourly job). Failed items get a Retry button.
+  User-supplied URLs are fetched only from public addresses (no loopback / private / tailnet, checked on every redirect).
+- **Inbox**: digest items as buttons: Approve ticks `- [x]` in the digest file (same as Obsidian) and ingests now; Dismiss rejects.
+- **Notes**: `notes/<paper-stem>.md` per paper (so paper bodies stay untouched). The build embeds them in the paper page under "Notes (web)"
+  and saving rebuilds the site. If the note was edited elsewhere (Obsidian) since the form loaded, the save is refused rather than overwriting.
+- Runs as `litwiki serve` on 127.0.0.1:8081, started by the watchdog; Caddy proxies `/app/*`. Logs: `logs/serve.log`, `logs/web-jobs.log`.
+- Change the password by editing `~/.env` and restarting (`pkill -f "bin/litwiki serve"`; the watchdog restarts it); all sessions are then logged out.
 
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
