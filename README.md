@@ -9,10 +9,10 @@ Zotero (cloud, read-only key) ──┐
 arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian]─┘           │
                                                           concept backlinks ◄────┘
 ~/vault ◄─► Syncthing ◄─► Obsidian (your devices)
-~/vault ─► MkDocs (hourly, if changed) ─► Caddy :8080 (localhost) ─► `sudo tailscale serve --bg --http=8080 http://127.0.0.1:8080`
+~/vault ─► MkDocs (hourly, if changed) ─► Caddy :8080 (localhost) ─► `tailscale serve --bg --http=8080 http://127.0.0.1:8080`
 ```
 
-Served on the tailnet at `http://litwiki.example.ts.net:8080/` (the machine's Tailscale name; `tailscale serve` is bound to that name, so after a rename run `sudo tailscale serve reset` and the command above again).
+Served on the tailnet at `http://litwiki.example.ts.net:8080/` (the machine's Tailscale name; `tailscale serve` is bound to that name, so after a rename run `tailscale serve reset` and the command above again).
 
 ## Vault layout
 
