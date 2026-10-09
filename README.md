@@ -12,6 +12,8 @@ arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian]�
 ~/vault ─► MkDocs (hourly, if changed) ─► Caddy :8080 (localhost) ─► `sudo tailscale serve --bg --http=8080 http://127.0.0.1:8080`
 ```
 
+Served on the tailnet at `http://litwiki.example.ts.net:8080/` (the machine's Tailscale name; `tailscale serve` is bound to that name, so after a rename run `sudo tailscale serve reset` and the command above again).
+
 ## Vault layout
 
 | Path | What | Who edits |
@@ -42,7 +44,7 @@ arXiv + OpenAlex back to `since_year`, scores candidates against your question/s
 tick. Papers ingested from it get `#review/my-review`. Runs are manual only; the daily job is unchanged.
 
 ## Web UI (`/app/`)
-Log in at `http://<tailnet-host>:8080/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the static site itself stays open to the tailnet).
+Log in at `http://litwiki.example.ts.net:8080/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the static site itself stays open to the tailnet).
 - **Add**: paste DOIs / arXiv IDs / URLs (one per line) or upload PDFs, optionally attaching a review or concept. Items are queued
   (`candidates`, `digest='web'`) and ingested immediately via `litwiki web-queue` (also swept by the hourly job). Failed items get a Retry button.
   User-supplied URLs are fetched only from public addresses (no loopback / private / tailnet, checked on every redirect).
