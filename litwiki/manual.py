@@ -6,6 +6,9 @@ import ipaddress
 import json
 import re
 import socket
+import subprocess
+import sys
+import threading
 import time
 from datetime import date
 from urllib.parse import urljoin, urlparse
@@ -13,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from . import textract, vault
-from .common import db, log
+from .common import LOG_DIR, ROOT, db, log
 from .discover import UA, ingest_candidate, openalex_work, parse_arxiv
 from .ingest import NoContent, find_page
 from .llm import BudgetExceeded
@@ -131,8 +134,8 @@ def _validate_choices(cfg, review: str, concept: str) -> None:
         raise AddError(f"Unknown concept {concept!r}.")
 
 
-def _queue(cfg, c: dict, review: str, concept: str) -> str:
-    """Insert/refresh the candidate as queued. Returns a status message for the user."""
+def _queue(cfg, c: dict, review: str, concept: str) -> tuple[str, str]:
+    """Insert/refresh the candidate as queued. Returns (candidate id, title)."""
     con = db()
     v = cfg["vault"]
     path, _ = find_page(v, c.get("doi", ""), c["title"] if not c.get("title_from_doc") else "")
@@ -149,15 +152,15 @@ def _queue(cfg, c: dict, review: str, concept: str) -> str:
                 "digest='web', status='queued'",
                 (c["id"], c["title"], json.dumps(c), 10, "web", "queued"))
     con.commit()
-    return c["title"]
+    return c["id"], c["title"]
 
 
-def add_text(cfg, text: str, review: str = "", concept: str = "") -> str:
+def add_text(cfg, text: str, review: str = "", concept: str = "") -> tuple[str, str]:
     _validate_choices(cfg, review, concept)
     return _queue(cfg, resolve(text), review, concept)
 
 
-def add_pdf(cfg, filename: str, data: bytes, review: str = "", concept: str = "") -> str:
+def add_pdf(cfg, filename: str, data: bytes, review: str = "", concept: str = "") -> tuple[str, str]:
     _validate_choices(cfg, review, concept)
     if len(data) > MAX_UPLOAD:
         raise AddError("That file is over 60 MB.")
@@ -180,6 +183,15 @@ def add_pdf(cfg, filename: str, data: bytes, review: str = "", concept: str = ""
          "authors": [], "abstract": "", "date": date.today().isoformat(), "year": None, "venue": "",
          "url": "", "pdf_url": "", "doi": "", "kind": "preprint", "local_file": rel, "title_from_doc": True}
     return _queue(cfg, c, review, concept)
+
+
+def spawn_queue() -> None:
+    """Run `litwiki web-queue` detached: it waits for the pipeline lock, ingests, rebuilds the site."""
+    out = open(LOG_DIR / "web-jobs.log", "a")
+    p = subprocess.Popen([sys.executable, "-m", "litwiki.cli", "web-queue"], stdout=out, stderr=out,
+                         stdin=subprocess.DEVNULL, start_new_session=True, cwd=ROOT)
+    threading.Thread(target=p.wait, daemon=True).start()  # reap
+    out.close()
 
 
 def retry(cfg, cid: str) -> None:

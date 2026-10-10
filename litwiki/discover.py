@@ -13,7 +13,7 @@ from . import vault
 from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
 from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
 from .llm import BudgetExceeded, claude
-from .notify import notify
+from .notify import bot_active, notify
 
 UA = {"User-Agent": "litwiki/0.1 (personal literature wiki)"}
 
@@ -230,7 +230,7 @@ def discover(cfg) -> dict:
     for c in picked:
         con.execute("UPDATE candidates SET status='digested', digest=? WHERE id=?", (path, c["id"]))
     con.commit()
-    if picked:
+    if picked and not bot_active():  # with the Discord bot, it posts the digest itself
         url = cfg.get("site_url", "").rstrip("/")
         link = f"\n{url}/{path.removesuffix('.md')}/" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])
@@ -341,7 +341,7 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
             (c["id"], c["title"], json.dumps(c), c.get("score", 0),
              "digested" if c["id"] in picked_ids else "triaged", path if c["id"] in picked_ids else None))
     con.commit()
-    if picked:
+    if picked and not bot_active():  # with the Discord bot, it posts the digest itself
         url = cfg.get("site_url", "").rstrip("/")
         link = f"\n{url}/{path.removesuffix('.md')}/" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])

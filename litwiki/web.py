@@ -204,13 +204,7 @@ def guard(fn):
 
 # ---------- background work ----------
 
-def spawn_queue() -> None:
-    """Run `litwiki web-queue` detached: it waits for the pipeline lock, ingests, rebuilds the site."""
-    out = open(LOG_DIR / "web-jobs.log", "a")
-    p = subprocess.Popen([sys.executable, "-m", "litwiki.cli", "web-queue"], stdout=out, stderr=out,
-                         stdin=subprocess.DEVNULL, start_new_session=True, cwd=ROOT)
-    threading.Thread(target=p.wait, daemon=True).start()  # reap
-    out.close()
+spawn_queue = manual.spawn_queue
 
 
 _build_lock = threading.Lock()

@@ -61,6 +61,18 @@ and **concept membership**. Colour = the paper's primary (first-listed) concept;
 Layouts are cached in `state/clusters.json` and recomputed only when a paper's text or concepts change; new layouts are aligned
 to the previous one so the map keeps its orientation. To cluster on more than the TL;DR, edit `sections` and run `litwiki build --force`.
 
+## Discord bot (`litwiki discord`)
+Started by the watchdog when `DISCORD_BOT_TOKEN` is in `~/.env`. Invite it with
+`https://discord.com/oauth2/authorize?client_id=<application id>&scope=bot%20applications.commands&permissions=84992`.
+- Polls `state.db` every minute; each new digest item (from digests of the last `discord.backfill_days` days) is posted as an embed with
+  **Ingest** / **Dismiss** buttons (plus a PDF link). Ingest ticks the digest line and runs `web-queue`; messages update to ✅ + a link when the
+  page exists, and also follow approvals/dismissals made in the web UI or Obsidian. Buttons survive restarts.
+- Slash commands: `/add` (DOI / arXiv / URL or a PDF attachment, optional review/concept), `/status`, `/digest` (post now), `/here` (use this channel).
+- Picks a channel itself on joining a server (prefers #litwiki, #digest, #literature… then the system channel) and remembers it in `state.db`;
+  `discord.channel_id` in `config.yaml` forces one. Pipeline alerts (budget, crashed jobs) go to the same channel when no webhook is set.
+- Only the application's owner/team (and `discord.allowed_user_ids`) can press buttons or run commands.
+- State: table `discord_posts`. Logs: `logs/discord.log`, `logs/discord.out`.
+
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)

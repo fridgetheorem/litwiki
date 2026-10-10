@@ -117,6 +117,11 @@ def cmd_serve(cfg, a):
     serve(cfg)
 
 
+def cmd_discord(cfg, a):
+    from .discord_bot import run
+    run(cfg)
+
+
 def cmd_hourly(cfg, a):
     """Zotero sync -> ingest new/approved items -> rebuild site if the vault changed."""
     from .discover import ingest_approved, run_requested_searches
@@ -182,10 +187,11 @@ def main():
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
     sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sub.add_parser("discord", help="run the Discord bot (digest posts with buttons, /add, /status)").set_defaults(f=cmd_discord)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)
     a = p.parse_args()
-    setup_logging(a.cmd if a.cmd in ("hourly", "daily", "serve") else "manual")
+    setup_logging(a.cmd if a.cmd in ("hourly", "daily", "serve", "discord") else "manual")
     cfg = load_config()
     con = db()
     if not kv_get(con, "installed_at"):
