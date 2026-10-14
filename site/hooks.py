@@ -7,6 +7,7 @@
 import html
 import os
 import posixpath
+from urllib.parse import quote
 import re
 from collections import defaultdict
 
@@ -19,6 +20,8 @@ _titles: dict[str, str] = {}         # src_uri -> title
 _back: dict[str, set] = defaultdict(set)
 _out: dict[str, set] = defaultdict(set)
 _bib: dict[str, str] = {}           # paper stem -> BibTeX entry
+_recent: list[dict] = []            # newest ingested papers, for the sidebar block
+RECENT_N = 20
 
 
 def _resolve(target: str) -> str | None:
@@ -32,12 +35,15 @@ def _slug(h: str) -> str:
 
 def on_files(files: Files, config):
     _index.clear(); _titles.clear(); _back.clear(); _out.clear(); _bib.clear()
+    _recent.clear()
     try:
         from pathlib import Path
         from litwiki.bibtex import build_all
+        from litwiki.vault import recent_papers
         _bib.update(build_all(Path(config["docs_dir"])))
-    except Exception as e:  # citations are an extra: never break the site build
-        print(f"WARNING: bibtex generation failed: {e}")
+        _recent.extend(recent_papers(Path(config["docs_dir"]), RECENT_N))
+    except Exception as e:  # these are extras: never break the site build
+        print(f"WARNING: bibtex / recent-papers generation failed: {e}")
     docs = config["docs_dir"]
     md = [f for f in files.documentation_pages()]
     for f in md:
@@ -138,6 +144,9 @@ def on_post_page(output: str, page, config):
     marker = '<form class="md-header__option" data-md-component="palette">'
     if marker in output:
         output = output.replace(marker, _APP_LINK + marker, 1)
+    nav = '<ul class="md-nav__list" data-md-scrollfix>'  # first one is the primary (left) navigation
+    if (block := _recent_block()) and nav in output:
+        output = output.replace(nav, block + nav, 1).replace("</head>", _RECENT_CSS + "</head>", 1)
     return output.replace("</body>", _COPY_JS + "</body>", 1)
 
 
@@ -150,3 +159,25 @@ setTimeout(function(){b.textContent='Copy BibTeX'},ok?2000:6000)}
 function fallback(){var t=document.createElement('textarea');t.value=txt;t.style.cssText='position:fixed;opacity:0';document.body.appendChild(t);
 t.select();var ok=false;try{ok=document.execCommand('copy')}catch(_){}document.body.removeChild(t);done(ok)}
 if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(txt).then(function(){done(true)},fallback)}else fallback()})}</script>"""
+
+
+_RECENT_CSS = """<style>
+.lw-recent{margin:.4rem .6rem .8rem;padding:.4rem .6rem;border:1px solid var(--md-default-fg-color--lightest);border-radius:6px;font-size:.68rem}
+.lw-recent summary{cursor:pointer;font-weight:700;font-size:.72rem;color:var(--md-default-fg-color--light)}
+.lw-recent ol{list-style:none;margin:.4rem 0 0;padding:0}.lw-recent li{margin:0;padding:.18rem 0;line-height:1.25;border-top:1px solid var(--md-default-fg-color--lightest)}
+.lw-recent li:first-child{border-top:0}.lw-recent a{display:block;color:var(--md-typeset-a-color);text-decoration:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.lw-recent a:hover{text-decoration:underline}.lw-recent small{color:var(--md-default-fg-color--light)}
+</style>"""
+
+
+def _recent_block() -> str:
+    if not _recent:
+        return ""
+    items = []
+    for r in _recent:
+        day = r["ts"][5:10] if len(r["ts"]) >= 10 else ""
+        meta = " · ".join(x for x in [r["authors"], str(r["year"] or ""), day] if x)
+        title = html.escape(r["title"], quote=True)
+        items.append(f'<li><a href="/papers/{quote(r["stem"])}/" title="{title}">{title}</a><small>{html.escape(meta)}</small></li>')
+    return (f'<details class="lw-recent" open><summary>Recently added ({len(_recent)})</summary><ol>' + "".join(items)
+            + "</ol></details>")

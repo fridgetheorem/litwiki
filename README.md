@@ -92,6 +92,12 @@ Titles are double-braced to keep capitalisation; `& % $ # _` are escaped. The si
 when `navigator.clipboard` is unavailable. Entries are only as good as the Zotero metadata (web pages come out as `@misc` without authors).
 Changing `bibtex.py` needs `litwiki build --force`.
 
+## Recently added sidebar
+The top of the wiki's left sidebar (and mobile drawer) lists the 20 most recently ingested papers (collapsible; title, authors, year, day).
+Order comes from `ingested_at` in each paper's frontmatter (set when the page is created); older pages were backfilled with
+`litwiki backfill-ingested` from the pipeline's ingest times (Zotero items), the add time (manual adds), or midnight of the `ingested` day
+(digest-approved pages made before the field existed). The home page's "Recently added" list uses the same order. Count: `RECENT_N` in `site/hooks.py`.
+
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)

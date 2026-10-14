@@ -31,10 +31,7 @@ def update_home(cfg) -> None:
     concept_lines = [f"- [[concepts/{s}|{fm['title']}]] ({fm.get('paper_count', 0)})"
                      for s, fm in sorted(cs.items(), key=lambda x: -int(x[1].get("paper_count", 0)))]
     papers = sorted((v / vault.PAPERS).glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-    recent = []
-    for p in papers[:15]:
-        fm, _ = read_page(p)
-        recent.append(f"- [[papers/{p.stem}|{fm.get('title', p.stem)}]] ({fm.get('year') or 'n.d.'})")
+    recent = [f"- [[papers/{r['stem']}|{r['title']}]] ({r['year'] or 'n.d.'})" for r in vault.recent_papers(v, 15)]
     rvs = vault.reviews(v)
     review_lines = [f"- [[reviews/{s}|{fm['title']}]]" for s, fm in rvs.items()]
     digests = sorted((v / vault.DIGESTS).glob("*.md"), reverse=True)[:7]

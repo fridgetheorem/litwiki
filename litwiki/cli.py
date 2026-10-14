@@ -117,6 +117,29 @@ def cmd_serve(cfg, a):
     serve(cfg)
 
 
+def cmd_backfill_ingested(cfg, a):
+    """Give pages a precise `ingested_at` where they only have a date (or a midnight placeholder): from the
+    pipeline's ingest time for Zotero items, the add time for manual adds, else the start of the `ingested` day
+    (digest-approved pages made before this field existed: their discovery time would be earlier than ingestion)."""
+    from . import vault
+    from .common import read_page, write_page
+    con, n = db(), 0
+    z = {r["page"]: r["updated"] for r in con.execute("SELECT page, updated FROM items WHERE page IS NOT NULL AND status='done'")}
+    manual = {r["id"]: r["seen"] for r in con.execute("SELECT id, seen FROM candidates WHERE digest='web'")}
+    for path in sorted((cfg["vault"] / vault.PAPERS).glob("*.md")):
+        fm, body = read_page(path)
+        have = fm.get("ingested_at")
+        if not fm or not fm.get("ingested") or (have and not str(have).endswith("T00:00:00Z")):
+            continue
+        t = z.get(f"{vault.PAPERS}/{path.name}") or manual.get(str(fm.get("key")))
+        new = (t.replace(" ", "T") + "Z") if t else f"{fm['ingested']}T00:00:00Z"
+        if new != have:
+            fm["ingested_at"] = new
+            write_page(path, fm, body)
+            n += 1
+    print(f"set ingested_at on {n} pages")
+
+
 def cmd_ask(cfg, a):
     from .ask import AskError, ask
     try:
@@ -198,6 +221,7 @@ def main():
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
     sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sub.add_parser("backfill-ingested", help="one-off: add precise ingested_at to existing paper pages").set_defaults(f=cmd_backfill_ingested)
     sp = sub.add_parser("ask", help="ask a question about the whole library (or a filtered part)")
     sp.add_argument("question", nargs="+")
     sp.add_argument("--concept", help="only papers in this concept slug")

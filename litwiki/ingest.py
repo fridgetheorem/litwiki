@@ -1,7 +1,7 @@
 """Turn a source document into a paper page + concept backlinks."""
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -133,6 +133,7 @@ def frontmatter(meta: dict, source: str, pdf_rel, concepts: list[str], key: str,
         fm["zotero_tags"] = meta.get("zotero_tags", [])
         fm["collections"] = meta.get("collections", [])
     fm.update({"pdf": pdf_rel, "concepts": concepts, "ingested": date.today().isoformat(),
+               "ingested_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                "fulltext": fulltext, "needs_pdf": pdf_rel is None, "claims_verified": f"{stats['ok']}/{stats['total']}", "status": "auto"})
     apply_tags(fm)
     return fm

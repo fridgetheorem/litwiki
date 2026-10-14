@@ -200,3 +200,22 @@ def render_paper(meta: dict, s: dict, concept_titles: dict[str, str], pdf_rel: s
     out += ["", "## Notes", "", "_Your notes. litwiki never rewrites this page's body after creation; "
             "only Zotero metadata in the frontmatter is refreshed._", ""]
     return "\n".join(out)
+
+
+def ingested_ts(fm: dict) -> str:
+    """When a paper page was created, as a sortable ISO string (exact if `ingested_at` is set, else the day)."""
+    return str(fm.get("ingested_at") or (f"{fm['ingested']}T00:00:00Z" if fm.get("ingested") else ""))
+
+
+def recent_papers(vault: Path, n: int) -> list[dict]:
+    """The n most recently ingested papers, newest first: [{stem, title, authors, year, ts}]."""
+    rows = []
+    for p in (vault / PAPERS).glob("*.md"):
+        fm, _ = read_page(p)
+        if not fm.get("title"):
+            continue
+        au = [str(a) for a in (fm.get("authors") or [])]
+        rows.append({"stem": p.stem, "title": str(fm["title"]), "year": fm.get("year"), "ts": ingested_ts(fm),
+                     "authors": ", ".join(au[:2]) + (" et al." if len(au) > 2 else "")})
+    rows.sort(key=lambda r: (r["ts"], r["stem"]), reverse=True)
+    return rows[:n]
