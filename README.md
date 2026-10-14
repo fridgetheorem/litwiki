@@ -83,6 +83,15 @@ Filters: `--concept`, `--review`, `--since YEAR`; `--no-detail` forces a single 
 Past ~2000 papers the corpus won't fit in one prompt (`MAX_CORPUS_CHARS`); it will then ask you to filter, and retrieval (embeddings) would be the next step.
 The web page runs questions in the background and keeps a history (table `asks`).
 
+## BibTeX
+Every paper page has a **Copy BibTeX** button (and a collapsible preview) above the TL;DR. Entries are generated at site-build time by
+`litwiki/bibtex.py`: for Zotero papers from the Zotero item data in `state.db` (real entry type — article, inproceedings, incollection, book,
+thesis, techreport, misc — plus volume/issue/pages/publisher, and your Zotero Citation Key if you set one), for discovery papers from the
+page frontmatter (arXiv → `@misc` with `eprint`). Keys are `lastnameYEARfirstword`, unique across the library (`a`, `b` suffixes on collisions).
+Titles are double-braced to keep capitalisation; `& % $ # _` are escaped. The site is plain HTTP, so the button falls back to `execCommand`
+when `navigator.clipboard` is unavailable. Entries are only as good as the Zotero metadata (web pages come out as `@misc` without authors).
+Changing `bibtex.py` needs `litwiki build --force`.
+
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)

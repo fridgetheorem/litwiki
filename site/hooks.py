@@ -4,6 +4,7 @@
 - > [!type] Title callouts -> Material admonitions
 - a Backlinks section listing pages that link here (minus pages this page already links to)
 """
+import html
 import os
 import posixpath
 import re
@@ -17,6 +18,7 @@ _index: dict[str, str] = {}          # lowercase stem/path -> src_uri
 _titles: dict[str, str] = {}         # src_uri -> title
 _back: dict[str, set] = defaultdict(set)
 _out: dict[str, set] = defaultdict(set)
+_bib: dict[str, str] = {}           # paper stem -> BibTeX entry
 
 
 def _resolve(target: str) -> str | None:
@@ -29,7 +31,13 @@ def _slug(h: str) -> str:
 
 
 def on_files(files: Files, config):
-    _index.clear(); _titles.clear(); _back.clear(); _out.clear()
+    _index.clear(); _titles.clear(); _back.clear(); _out.clear(); _bib.clear()
+    try:
+        from pathlib import Path
+        from litwiki.bibtex import build_all
+        _bib.update(build_all(Path(config["docs_dir"])))
+    except Exception as e:  # citations are an extra: never break the site build
+        print(f"WARNING: bibtex generation failed: {e}")
     docs = config["docs_dir"]
     md = [f for f in files.documentation_pages()]
     for f in md:
@@ -78,9 +86,21 @@ def _with_notes(markdown: str, here: str, config) -> str:
             + f"[{label}](/app/notes/{stem}){{ .md-button }}\n")
 
 
+def _with_bib(markdown: str, here: str) -> str:
+    """Copy-BibTeX button (plus a collapsible preview) before the first section of a paper page."""
+    entry = _bib.get(posixpath.basename(here).removesuffix(".md"))
+    if not entry:
+        return markdown
+    block = ('<div class="lw-bib"><button type="button" class="md-button md-button--primary lw-copy">Copy BibTeX</button> '
+             '<details><summary>Show entry</summary><pre><code>' + html.escape(entry, quote=False) + '</code></pre></details></div>')
+    i = markdown.find("\n## ")
+    return markdown[:i] + "\n\n" + block + "\n" + markdown[i:] if i >= 0 else markdown + "\n\n" + block + "\n"
+
+
 def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
     if here.startswith("papers/"):
+        markdown = _with_bib(markdown, here)
         markdown = _with_notes(markdown, here, config)
 
     def repl(m):
@@ -116,4 +136,17 @@ _APP_LINK = (f'<a class="md-header__button" href="/clusters/" title="Visual map 
 def on_post_page(output: str, page, config):
     """Header links from the wiki to the paper map and the web UI (their navbars link back)."""
     marker = '<form class="md-header__option" data-md-component="palette">'
-    return output.replace(marker, _APP_LINK + marker, 1) if marker in output else output
+    if marker in output:
+        output = output.replace(marker, _APP_LINK + marker, 1)
+    return output.replace("</body>", _COPY_JS + "</body>", 1)
+
+
+# Delegated click handler, on every page so it survives Material's instant navigation. The site is plain HTTP
+# on the tailnet (not a secure context), so navigator.clipboard is often unavailable: fall back to execCommand.
+_COPY_JS = """<script>if(!window.__lwBib){window.__lwBib=1;document.addEventListener('click',function(e){
+var b=e.target.closest&&e.target.closest('.lw-copy');if(!b)return;var box=b.closest('.lw-bib'),txt=box.querySelector('code').textContent;
+function done(ok){b.textContent=ok?'Copied \\u2713':'Copy failed \\u2014 select the text below';if(!ok)box.querySelector('details').open=true;
+setTimeout(function(){b.textContent='Copy BibTeX'},ok?2000:6000)}
+function fallback(){var t=document.createElement('textarea');t.value=txt;t.style.cssText='position:fixed;opacity:0';document.body.appendChild(t);
+t.select();var ok=false;try{ok=document.execCommand('copy')}catch(_){}document.body.removeChild(t);done(ok)}
+if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(txt).then(function(){done(true)},fallback)}else fallback()})}</script>"""
