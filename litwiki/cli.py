@@ -117,6 +117,17 @@ def cmd_serve(cfg, a):
     serve(cfg)
 
 
+def cmd_ask(cfg, a):
+    from .ask import AskError, ask
+    try:
+        r = ask(cfg, " ".join(a.question), concept=a.concept or "", review=a.review or "", since=a.since,
+                detail=not a.no_detail)
+    except AskError as e:
+        raise SystemExit(str(e))
+    print(r["answer"])
+    print(f"\n[{r['n_papers']} papers read; {len(r['detailed'])} in detail; {len(r['cited'])} cited; ${r['cost']:.3f}]")
+
+
 def cmd_discord(cfg, a):
     from .discord_bot import run
     run(cfg)
@@ -187,6 +198,13 @@ def main():
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
     sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sp = sub.add_parser("ask", help="ask a question about the whole library (or a filtered part)")
+    sp.add_argument("question", nargs="+")
+    sp.add_argument("--concept", help="only papers in this concept slug")
+    sp.add_argument("--review", help="only papers tagged with this review slug")
+    sp.add_argument("--since", type=int, help="only papers from this year on")
+    sp.add_argument("--no-detail", action="store_true", help="never read findings/limitations (single, cheaper call)")
+    sp.set_defaults(f=cmd_ask)
     sub.add_parser("discord", help="run the Discord bot (digest posts with buttons, /add, /status)").set_defaults(f=cmd_discord)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)

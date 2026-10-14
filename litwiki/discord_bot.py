@@ -16,7 +16,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import manual, vault
+from . import ask as askmod, manual, vault
 from .common import db, kv_get, kv_set, log, read_page
 from .discover import TICKED, tick_items
 from .llm import spent
@@ -370,6 +370,30 @@ def register_commands(bot: Bot):
         await asyncio.to_thread(record_post, cid, msg.channel.id, msg.id, "approved")
         await asyncio.to_thread(manual.spawn_queue)
 
+    @tree.command(name="ask", description="Ask a question about your whole paper library")
+    @app_commands.describe(question="e.g. What major topics do my papers share?", concept="Only papers in this concept (slug)",
+                           review="Only papers tagged with this review (slug)", since="Only papers from this year on")
+    async def ask_cmd(interaction: discord.Interaction, question: str, concept: str = "", review: str = "",
+                      since: int | None = None):
+        if await deny_unless_allowed(interaction):
+            return
+        await interaction.response.defer(thinking=True)
+        try:
+            r = await asyncio.to_thread(askmod.ask, cfg, question, concept, review, since)
+        except (askmod.AskError, askmod.BudgetExceeded) as e:
+            await interaction.followup.send(f"⚠️ {e}")
+            return
+        except Exception as e:
+            log.exception("discord /ask failed")
+            await interaction.followup.send(f"⚠️ Something went wrong: {e}"[:500])
+            return
+        chunks = split_answer(r["answer"])
+        for i, chunk in enumerate(chunks):
+            emb = discord.Embed(title=question[:250] if i == 0 else None, description=chunk, colour=0x5865F2)
+            if i == len(chunks) - 1:
+                emb.set_footer(text=f"{r['n_papers']} papers read · {len(r['cited'])} cited · ${r['cost']:.2f}")
+            await interaction.followup.send(embed=emb)
+
     @tree.command(name="status", description="Queue, pending digest items and LLM spend")
     async def status(interaction: discord.Interaction):
         if await deny_unless_allowed(interaction):
@@ -408,6 +432,19 @@ def register_commands(bot: Bot):
             return
         await asyncio.to_thread(lambda: kv_set(_con(), "discord_channel", interaction.channel_id))
         await interaction.response.send_message("📚 Digests and alerts will be posted in this channel from now on.")
+
+
+def split_answer(text: str, limit: int = 3800) -> list[str]:
+    """Split on paragraph boundaries so each piece fits an embed description (4096 chars)."""
+    chunks, cur = [], ""
+    for para in text.split("\n\n"):
+        while len(para) > limit:  # pathological single paragraph
+            cut = para.rfind(" ", 0, limit) or limit
+            chunks.append(para[:cut]); para = para[cut:].lstrip()
+        if len(cur) + len(para) + 2 > limit and cur:
+            chunks.append(cur); cur = ""
+        cur = f"{cur}\n\n{para}" if cur else para
+    return [*chunks, cur] if cur else chunks or ["(empty answer)"]
 
 
 def run(cfg) -> None:

@@ -73,6 +73,16 @@ Started by the watchdog when `DISCORD_BOT_TOKEN` is in `~/.env`. Invite it with
 - Only the application's owner/team (and `discord.allowed_user_ids`) can press buttons or run commands.
 - State: table `discord_posts`. Logs: `logs/discord.log`, `logs/discord.out`.
 
+## Asking questions (`litwiki ask`, web **Ask**, Discord `/ask`)
+Generic questions over the whole library ("what major topics do these papers share?", "which papers evaluate on X?").
+`litwiki/ask.py` puts id, title, authors, year, concepts and TL;DR of every paper (~40k tokens at 375 papers) in one prompt. If the model
+says it needs specifics the TL;DRs lack, it names ≤30 papers and a second call reads their findings, limitations and **your notes**.
+Citations are `[@page-stem]` in the model output that we rewrite into wiki links (ids not in the library show as `[?id]`), so URLs can't be invented.
+Filters: `--concept`, `--review`, `--since YEAR`; `--no-detail` forces a single call. Typically $0.05–0.30 per question; capped by
+`budget.ask_daily_usd` (separate from the pipeline caps) and the usual daily/monthly stops; spend is logged under purpose `ask`.
+Past ~2000 papers the corpus won't fit in one prompt (`MAX_CORPUS_CHARS`); it will then ask you to filter, and retrieval (embeddings) would be the next step.
+The web page runs questions in the background and keeps a history (table `asks`).
+
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)

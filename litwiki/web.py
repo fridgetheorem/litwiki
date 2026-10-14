@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import manual, notes, vault
+from . import ask as askmod, manual, notes, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -98,7 +98,7 @@ label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
 {% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a>
-<a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><span class="sp"></span>
+<a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
 
@@ -151,6 +151,25 @@ TEMPLATES = {
 <table>{% for p in papers %}<tr><td><a href="/papers/{{ p.stem }}/">{{ p.title }}</a><div class="mut">{{ p.authors }} {{ p.year }}</div></td>
 <td><a href="/app/notes/{{ p.stem }}">{% if p.has_note %}Edit notes{% else %}Add notes{% endif %}</a></td></tr>{% endfor %}</table>
 {% if more %}<p class="mut">Showing the first {{ papers|length }}; refine the search.</p>{% endif %}{% endblock %}""",
+    "ask.html": """{% extends "base.html" %}{% block body %}<h1>Ask the library</h1>
+<form method="post" action="/app/ask" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<label for="q">Question</label><textarea id="q" name="question" rows="3" autofocus placeholder="What major topics do my papers share?&#10;Which papers evaluate on real-world protocol implementations?"></textarea>
+<div class="row"><div><label for="c">Only concept</label><select id="c" name="concept"><option value="">all papers</option>
+{% for s, t in concepts %}<option value="{{ s }}">{{ t }}</option>{% endfor %}</select></div>
+<div><label for="r">Only review</label><select id="r" name="review"><option value="">—</option>
+{% for s, t in reviews %}<option value="{{ s }}">{{ t }}</option>{% endfor %}</select></div>
+<div><label for="y">Year from</label><input id="y" type="text" name="since" inputmode="numeric" placeholder="e.g. 2022"></div></div>
+<p><button class="b">Ask</button> <span class="mut">Reads every matching paper's TL;DR (and findings, limitations and your notes for up to 30 papers if it needs detail). ≈ $0.15–0.30 per question.</span></p></form>
+<h2>Recent questions</h2>
+{% for a in recent %}<div><a href="/app/ask/{{ a.id }}">{{ a.question[:110] }}</a> <span class="mut">· {{ a.status }}{% if a.scope %} · {{ a.scope }}{% endif %} · {{ a.ts[:16] }}</span></div>
+{% else %}<p class="mut">No questions yet.</p>{% endfor %}{% endblock %}""",
+    "ask_result.html": """{% extends "base.html" %}{% block body %}<p><a href="/app/ask">← Ask another</a></p>
+<h1>{{ a.question }}</h1><p class="mut">{% if a.scope %}{{ a.scope }} · {% endif %}{{ a.ts[:16] }} UTC</p>
+{% if a.status == 'running' %}<div class="card">Reading the library… this page refreshes itself.</div>
+{% elif a.status == 'error' %}<div class="flash err">{{ a.error }}</div>
+{% else %}<div class="card answer">{{ html|safe }}</div>
+<p class="mut">{{ a.n_papers }} papers read · ${{ '%.2f'|format(a.cost) }}</p>{% endif %}
+<style>.answer a{color:var(--acc)}.answer h1,.answer h2,.answer h3{font-size:1.05rem;margin:1rem 0 .3rem}</style>{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -354,6 +373,68 @@ def papers(request: Request) -> Response:
     return render(request, "papers.html", title="Papers", papers=out, q=request.query_params.get("q", ""), more=more)
 
 
+ASK_SCHEMA = """CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, ts TEXT DEFAULT (datetime('now')), question TEXT,
+    scope TEXT, status TEXT, answer TEXT, error TEXT, cost REAL DEFAULT 0, n_papers INTEGER DEFAULT 0)"""
+
+
+def _asks_con():
+    con = db()
+    con.execute(ASK_SCHEMA)
+    return con
+
+
+def _run_ask(aid: str, question: str, concept: str, review: str, since: int | None) -> None:
+    con = _asks_con()
+    try:
+        r = askmod.ask(CFG, question, concept, review, since)
+        con.execute("UPDATE asks SET status='done', answer=?, cost=?, n_papers=? WHERE id=?",
+                    (r["answer"], r["cost"], r["n_papers"], aid))
+    except (askmod.AskError, askmod.BudgetExceeded) as e:
+        con.execute("UPDATE asks SET status='error', error=? WHERE id=?", (str(e), aid))
+    except Exception as e:
+        log.exception("ask failed")
+        con.execute("UPDATE asks SET status='error', error=? WHERE id=?", (f"Something went wrong: {e}"[:300], aid))
+    con.commit()
+
+
+def ask_get(request: Request) -> Response:
+    v, con = CFG["vault"], _asks_con()
+    recent = [dict(r) for r in con.execute("SELECT id, ts, question, scope, status FROM asks ORDER BY ts DESC, rowid DESC LIMIT 15")]
+    return render(request, "ask.html", title="Ask", concepts=_titles(vault.concepts(v)), reviews=_titles(vault.reviews(v)),
+                  recent=recent)
+
+
+def ask_post(request: Request) -> Response:
+    form = request.state.form
+    question = str(form.get("question", "")).strip()
+    concept, review = str(form.get("concept", "")), str(form.get("review", ""))
+    since_raw = str(form.get("since", "")).strip()
+    if not question:
+        return redirect("/app/ask", "Ask a question first.", "err")
+    if since_raw and not since_raw.isdigit():
+        return redirect("/app/ask", "Year must be a number.", "err")
+    since = int(since_raw) if since_raw else None
+    con = _asks_con()
+    aid = secrets.token_hex(6)
+    scope = ", ".join(x for x in [f"concept: {concept}" if concept else "", f"review: {review}" if review else "",
+                                  f"from {since}" if since else ""] if x)
+    con.execute("INSERT INTO asks(id, question, scope, status) VALUES(?,?,?,'running')", (aid, question[:2000], scope))
+    con.commit()
+    threading.Thread(target=_run_ask, args=(aid, question, concept, review, since), daemon=True).start()
+    return redirect(f"/app/ask/{aid}")
+
+
+def ask_result(request: Request) -> Response:
+    import markdown
+    row = _asks_con().execute("SELECT * FROM asks WHERE id=?", (request.path_params["aid"],)).fetchone()
+    if not row:
+        return HTMLResponse("No such question.", status_code=404)
+    a = dict(row)
+    html = markdown.markdown(askmod.sanitize_for_html(a["answer"] or ""), extensions=["tables", "sane_lists"])
+    return render(request, "ask_result.html", title="Answer", a=a, html=html,
+                  refresh=3 if a["status"] == "running" else None)
+
+
 def note_get(request: Request) -> Response:
     stem = request.path_params["stem"]
     try:
@@ -413,6 +494,7 @@ def logout(request: Request) -> Response:
 def create_app(cfg) -> Starlette:
     global CFG
     CFG = cfg
+    _asks_con().execute("UPDATE asks SET status='error', error='Interrupted by a restart; ask again.' WHERE status='running'")
     return Starlette(routes=[
         Route("/app", lambda r: RedirectResponse("/app/", status_code=308)),
         Route("/app/", guard(dashboard)),
@@ -424,6 +506,9 @@ def create_app(cfg) -> Starlette:
         Route("/app/run", guard(run_now), methods=["POST"]),
         Route("/app/inbox", guard(inbox), methods=["GET"]),
         Route("/app/inbox", guard(inbox_action), methods=["POST"]),
+        Route("/app/ask", guard(ask_get), methods=["GET"]),
+        Route("/app/ask", guard(ask_post), methods=["POST"]),
+        Route("/app/ask/{aid}", guard(ask_result), methods=["GET"]),
         Route("/app/papers", guard(papers)),
         Route("/app/notes/{stem}", guard(note_get), methods=["GET"]),
         Route("/app/notes/{stem}", guard(note_post), methods=["POST"]),
