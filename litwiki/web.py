@@ -110,7 +110,7 @@ TEMPLATES = {
 <p><button class="b">Log in</button></p></form>{% endblock %}""",
     "dashboard.html": """{% extends "base.html" %}{% block body %}
 <h1>Add to the wiki</h1>
-<form method="post" action="/app/add" enctype="multipart/form-data" class="card">
+<form method="post" action="/app/add" enctype="multipart/form-data" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
 <label for="t">DOIs, arXiv IDs or URLs <span class="mut">(one per line)</span></label>
 <textarea id="t" name="text" rows="3" placeholder="10.1145/3849807&#10;arXiv:2401.12345&#10;https://example.org/paper.pdf"></textarea>
 <label for="f">…or upload PDFs</label><input id="f" type="file" name="files" accept="application/pdf" multiple>
