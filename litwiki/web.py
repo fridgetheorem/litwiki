@@ -233,7 +233,6 @@ _build_dirty = False
 def request_build() -> None:
     """Rebuild the site in the background; bursts of saves coalesce into one extra build."""
     global _build_dirty
-    from .site import build
     _build_dirty = True
     if not _build_lock.acquire(blocking=False):
         return
@@ -244,7 +243,13 @@ def request_build() -> None:
             while _build_dirty:
                 _build_dirty = False
                 try:
-                    build(CFG)
+                    # A fresh process each time: this long-running server keeps old modules in memory, and a
+                    # build with stale code once overwrote a newer site with an older template.
+                    with open(LOG_DIR / "web-jobs.log", "a") as out:
+                        r = subprocess.run([sys.executable, "-m", "litwiki.cli", "build"], stdout=out, stderr=out,
+                                           stdin=subprocess.DEVNULL, cwd=ROOT, timeout=900)
+                    if r.returncode:
+                        log.error("web-triggered build exited with %s (see logs/web-jobs.log)", r.returncode)
                 except BaseException:
                     log.exception("web-triggered build failed")
         finally:
