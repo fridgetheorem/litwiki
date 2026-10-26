@@ -1,0 +1,205 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Paper map · Literature Wiki</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1d2330;--mut:#667085;--line:#d9dde5;--acc:#3f51b5;--card:#f6f7fb;--other:#b4bac6;--ref:#d9730d;--halo:#ffffffd9}
+@media(prefers-color-scheme:dark){:root{--bg:#14161c;--fg:#e4e7ee;--mut:#98a2b3;--line:#2c313c;--acc:#8c9eff;--card:#1c1f27;--other:#5b6372;--ref:#f0a040;--halo:#14161cd9}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+header{display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;padding:.5rem .8rem;border-bottom:1px solid var(--line);background:var(--card)}
+header a{color:var(--acc);text-decoration:none}header .sp{flex:1}
+select,input[type=search]{padding:.3rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;max-width:16rem}
+#wrap{flex:1;display:flex;min-height:0}#plot{flex:1;min-width:0;cursor:grab;touch-action:none}#plot.drag{cursor:grabbing}
+#panel{width:21rem;overflow:auto;padding:.7rem .8rem;border-left:1px solid var(--line);font-size:.86rem}
+#panel .row{display:flex;gap:.5rem;align-items:center;padding:.15rem 0;cursor:pointer}#panel .row.off{opacity:.35}
+#panel i.dot{width:.8rem;height:.8rem;border-radius:50%;flex:none}#panel small,#panel .mut{color:var(--mut)}#panel .row small{margin-left:auto}
+#panel h2{font-size:1rem;margin:.1rem 0 .3rem;line-height:1.25}#panel h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:.9rem 0 .2rem}
+#panel .tldr{margin:.4rem 0;color:var(--fg)}#panel a{color:var(--acc);text-decoration:none}#panel a:hover{text-decoration:underline}
+#panel button{font:inherit;border:1px solid var(--acc);color:var(--acc);background:none;border-radius:6px;padding:.2rem .6rem;cursor:pointer}
+#panel button.pri{background:var(--acc);color:var(--bg)}
+.nb{display:flex;gap:.5rem;padding:.3rem .2rem;border-top:1px solid var(--line);cursor:pointer;border-radius:4px}.nb:hover,.nb.hl{background:var(--card)}
+.nb .t{flex:1;min-width:0}.nb .t b{font-weight:600;display:block;line-height:1.25}.nb .go{align-self:center;font-size:1rem;padding:0 .3rem}
+.chip{display:inline-block;font-size:.7rem;padding:0 .35rem;border-radius:9px;border:1px solid var(--line);margin-right:.25rem;color:var(--mut)}
+.chip.cit{border-color:var(--acc);color:var(--acc)}.chip.ref{border-color:var(--ref);color:var(--ref)}
+.tog{display:flex;gap:.9rem;flex-wrap:wrap;margin:.3rem 0}.tog label{display:flex;gap:.3rem;align-items:center;cursor:pointer}
+circle.pt{stroke:var(--bg);stroke-width:1;vector-effect:non-scaling-stroke;cursor:pointer}circle.off{opacity:.07;pointer-events:none}circle.faded{opacity:.14}
+circle.sel{stroke:var(--fg);stroke-width:2.5}circle.nbr{stroke:var(--fg);stroke-width:1.5}
+line.e{vector-effect:non-scaling-stroke;fill:none;stroke-linecap:round;pointer-events:none}
+line.e.cit{stroke:var(--acc);stroke-width:2.2;opacity:.9}line.e.ref{stroke:var(--ref);stroke-width:1.5;stroke-dasharray:6 3;opacity:.85}
+line.e.txt{stroke:var(--mut);stroke-width:1.2;stroke-dasharray:1 4;opacity:.8}
+#labels text,#clabels text{pointer-events:none;paint-order:stroke;stroke:var(--halo);stroke-width:3.5px;stroke-linejoin:round}
+#labels text{font-size:11px;fill:var(--fg)}#labels text.f{font-size:12.5px;font-weight:700}
+#clabels text{font-size:13px;font-weight:700;text-anchor:middle;opacity:.55;letter-spacing:.02em}
+#tip{position:fixed;pointer-events:none;max-width:24rem;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font-size:.85rem;box-shadow:0 4px 14px #0004;display:none;z-index:5}
+#tip b{display:block}#tip .m{color:var(--mut)}
+@media(max-width:760px){#wrap{flex-direction:column}#panel{width:auto;height:42%;border-left:0;border-top:1px solid var(--line)}}
+</style></head><body>
+<header><a href="/"><b>← Wiki</b></a><a href="/app/">Manage</a><span class="sp"></span>
+<label>Layout <select id="layout"></select></label>
+<label>Concept <select id="concept"><option value="">all</option></select></label>
+<label>From <select id="year"></select></label>
+<input id="q" type="search" placeholder="Search (Enter to focus)"><span id="count" style="color:var(--mut)"></span></header>
+<div id="wrap"><svg id="plot"><g id="clabels"></g><g id="world"><g id="edges"></g><g id="dots"></g></g><g id="labels"></g></svg>
+<aside id="panel"></aside></div><div id="tip"></div>
+<script>
+const D=__DATA__;
+const $=id=>document.getElementById(id),NS="http://www.w3.org/2000/svg",P=D.papers;
+const svg=$("plot"),dotsG=$("dots"),edgesG=$("edges"),labelsG=$("labels"),clabelsG=$("clabels"),tip=$("tip"),panel=$("panel");
+let layout="tldr",view={x:0,y:0,k:1},hidden=new Set(),sel=-1,nbrs=[],relOn={cit:true,ref:true,txt:true},dots=[],vis=[],anim=0,moved=false;
+const maxCb=Math.max(1,...P.map(p=>p.cb||0));
+P.forEach((p,i)=>{p.i=i;p.imp=Math.log1p(p.cb||0)+2*(p.cites.length+p.citedby.length)+(p.coup.length?.5:0)});
+const byImp=[...P].sort((a,b)=>b.imp-a.imp||a.i-b.i);
+const colour=p=>D.colors[p.p]||"var(--other)",radius=p=>3.5+4.5*Math.log1p(p.cb||0)/Math.log1p(maxCb),url=p=>"/papers/"+encodeURIComponent(p.id)+"/";
+const size=()=>{const r=svg.getBoundingClientRect();return{w:r.width,h:r.height,s:Math.min(r.width,r.height)*0.46}};
+const base=(p,l=layout)=>{const{w,h,s}=size();return[w/2+p.xy[l][0]*s,h/2+p.xy[l][1]*s]};
+const scr=(p,l=layout)=>{const[x,y]=base(p,l);return[x*view.k+view.x,y*view.k+view.y]};
+for(const [k,v] of Object.entries(D.layouts))$("layout").add(new Option(v,k));
+for(const [s,t] of Object.entries(D.concepts).sort((a,b)=>a[1].localeCompare(b[1])))$("concept").add(new Option(t,s));
+$("year").add(new Option("any",""));for(const y of [...new Set(P.map(p=>p.y).filter(Boolean))].sort())$("year").add(new Option(y,y));
+const el=(tag,attrs={},text)=>{const e=document.createElement(tag);for(const[k,v] of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e};
+const svgEl=(tag,attrs={})=>{const e=document.createElementNS(NS,tag);for(const[k,v] of Object.entries(attrs))e.setAttribute(k,v);return e};
+
+// ---------- neighbours of the focal paper ----------
+function neighbours(p,ignoreToggles=false){
+  const m=new Map(),get=i=>{if(!m.has(i))m.set(i,{i,cit:"",shared:0,sim:0});return m.get(i)};
+  p.cites.forEach(i=>get(i).cit="out");p.citedby.forEach(i=>{const n=get(i);n.cit=n.cit?"both":"in"});
+  p.coup.forEach(([i,n])=>get(i).shared=n);p.sim.forEach(([i,s])=>get(i).sim=s);
+  return [...m.values()].filter(n=>ignoreToggles||(n.cit&&relOn.cit)||(n.shared&&relOn.ref)||(n.sim&&relOn.txt))
+    .sort((a,b)=>(!!b.cit-!!a.cit)||(b.shared-a.shared)||(b.sim-a.sim));
+}
+const kind=n=>n.cit&&relOn.cit?"cit":n.shared&&relOn.ref?"ref":"txt";
+function select(i,fit=true){
+  sel=i;nbrs=i>=0?neighbours(P[i]):[];
+  if(i>=0&&history.replaceState)history.replaceState(null,"","#"+encodeURIComponent(P[i].id));
+  else if(history.replaceState)history.replaceState(null,"",location.pathname);
+  renderPanel();paint();if(fit&&i>=0)fitFocus();else place();
+}
+const inFocus=i=>sel<0||i===sel||nbrs.some(n=>n.i===i);
+
+// ---------- drawing ----------
+function build(){
+  dotsG.replaceChildren();
+  dots=P.map(p=>{const c=svgEl("circle",{class:"pt",fill:colour(p)});
+    c.addEventListener("mousemove",e=>show(e,p));c.addEventListener("mouseleave",()=>tip.style.display="none");
+    c.addEventListener("click",e=>{e.stopPropagation();if(!moved)select(p.i)});c.addEventListener("dblclick",()=>location.href=url(p));
+    dotsG.append(c);return c});
+  filter();
+}
+function paint(){ // classes + edges (positions come from place())
+  const ids=new Set(nbrs.map(n=>n.i));
+  dots.forEach((c,i)=>{const p=P[i];c.setAttribute("class","pt"+(vis[i]?"":" off")+(sel>=0&&vis[i]&&!inFocus(i)?" faded":"")+(i===sel?" sel":ids.has(i)?" nbr":""))});
+  edgesG.replaceChildren();
+  if(sel>=0)for(const n of nbrs)edgesG.append(svgEl("line",{class:"e "+kind(n),"data-i":n.i}));
+  if(sel>=0){nbrs.forEach(n=>dotsG.append(dots[n.i]));dotsG.append(dots[sel])}  // focus + neighbours drawn on top
+}
+function place(){
+  dots.forEach((c,i)=>{const[x,y]=base(P[i]);c.setAttribute("cx",x);c.setAttribute("cy",y);c.setAttribute("r",(radius(P[i])+(i===sel?3:0))/view.k)});
+  if(sel>=0){const[fx,fy]=base(P[sel]);edgesG.childNodes.forEach(l=>{const[x,y]=base(P[+l.getAttribute("data-i")]);
+    l.setAttribute("x1",fx);l.setAttribute("y1",fy);l.setAttribute("x2",x);l.setAttribute("y2",y)})}
+  $("world").setAttribute("transform",`translate(${view.x} ${view.y}) scale(${view.k})`);
+  drawLabels();
+}
+const trunc=(t,n)=>t.length<=n?t:(t.slice(0,n).replace(/\s+\S*$/,"")||t.slice(0,n))+"…";
+const longText=p=>view.k<4?p.lab+" · "+trunc(p.st,34):p.lab+" · "+p.st;
+function drawLabels(){
+  labelsG.replaceChildren();clabelsG.replaceChildren();const{w,h}=size(),boxes=[];
+  const free=(x,y,bw,bh)=>x>=2&&y>=2&&x+bw<=w-2&&y+bh<=h-2&&boxes.every(b=>x>b[0]+b[2]+1||x+bw<b[0]-1||y>b[1]+b[3]||y+bh<b[1]);
+  // Try each text (longest first) at right / left / above / below the dot; first spot with no overlap wins.
+  const put=(p,texts,focus)=>{
+    const[x,y]=scr(p);if(x<-30||y<-30||x>w+30||y>h+30)return false;
+    const r=radius(p)+(p.i===sel?3:0)+3,fs=focus?12.5:11,cw=focus?7.4:6.3,bh=fs+4;
+    for(const t of texts)for(const[dx,dy,anchor] of [[r,-bh/2,"start"],[-r-t.length*cw-6,-bh/2,"end"],[-t.length*cw/2-3,-r-bh,"middle"],[-t.length*cw/2-3,r,"middle"]]){
+      const bw=t.length*cw+6,bx=x+dx,by=y+dy;
+      if(free(bx,by,bw,bh)){boxes.push([bx,by,bw,bh]);
+        const tx=svgEl("text",{x:anchor==="start"?bx:anchor==="end"?bx+bw-3:bx+bw/2,y:by+bh-3,"text-anchor":anchor==="end"?"end":anchor,class:focus&&p.i===sel?"f":""});
+        tx.textContent=t;labelsG.append(tx);return true}}
+    return false};
+  if(sel>=0){put(P[sel],[longText(P[sel]),P[sel].lab],true);nbrs.forEach(n=>put(P[n.i],[longText(P[n.i]),P[n.i].lab],true));return}
+  // Concept names at the median position of their papers (orientation at a glance): drawn behind the dots,
+  // and their space is reserved so paper labels go around them.
+  if(view.k<2.5)for(const s of D.top){const pts=P.filter((p,i)=>p.p===s&&vis[i]).map(p=>scr(p));if(pts.length<3)continue;
+    const med=a=>a.sort((u,v)=>u-v)[a.length>>1],x=med(pts.map(q=>q[0])),y=med(pts.map(q=>q[1])),t=trunc(D.concepts[s]||s,24),bw=t.length*8+8;
+    if(!free(x-bw/2,y-9,bw,18))continue;boxes.push([x-bw/2,y-9,bw,18]);
+    const tx=svgEl("text",{x,y:y+5,fill:D.colors[s]});tx.textContent=t;clabelsG.append(tx)}
+  const cap=view.k<1.5?40:view.k<3?70:110;let n=0;  // zoomed out: only papers that carry real signal get a name
+  for(const p of byImp){if(n>=cap)break;if(!vis[p.i]||(view.k<2&&p.imp<=0))continue;if(put(p,[view.k<1.8?p.lab:longText(p),p.lab],false))n++}
+}
+function show(e,p){
+  tip.replaceChildren(el("b",{},p.t),el("div",{class:"m"},[p.a,p.y].filter(Boolean).join(", ")),el("div",{style:"margin-top:.3rem"},p.s+(p.s.length>=420?"…":"")),
+    el("div",{class:"m",style:"margin-top:.3rem"},sel===p.i?"Focused paper":"Click to focus · double-click to open"));
+  tip.style.display="block";tip.style.left=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8)+"px";tip.style.top=Math.min(e.clientY+14,innerHeight-tip.offsetHeight-8)+"px"}
+
+// ---------- filters ----------
+function filter(){
+  const q=$("q").value.toLowerCase().trim().split(/\s+/).filter(Boolean),con=$("concept").value,y=+$("year").value||0;let n=0;
+  vis=P.map(p=>{const ok=(!con||p.c.includes(con))&&(!y||(p.y&&p.y>=y))&&!hidden.has(D.colors[p.p]?p.p:"")&&q.every(w=>(p.t+" "+p.a+" "+p.s).toLowerCase().includes(w));n+=ok;return ok});
+  $("count").textContent=n+" / "+P.length;paint();place();
+}
+
+// ---------- side panel ----------
+function legend(){const root=el("div");root.append(el("h2",{},"Paper map"),el("p",{class:"mut"},"Click a paper to focus it and see its neighbours; double-click to open it. Dot size = citation count; colour = main concept."));
+  const cnt={};for(const p of P)cnt[p.p]=(cnt[p.p]||0)+1;
+  for(const s of [...D.top,""]){const row=el("div",{class:"row"+(hidden.has(s)?" off":""),title:"Click to hide/show"});const i=el("i",{class:"dot"});i.style.background=D.colors[s]||"var(--other)";
+    row.append(i,el("span",{},s?D.concepts[s]:"Other / no concept"),el("small",{},String(s?cnt[s]:P.filter(p=>!D.colors[p.p]).length)));
+    row.onclick=()=>{hidden.has(s)?hidden.delete(s):hidden.add(s);renderPanel();filter()};root.append(row)}
+  return root}
+function renderPanel(){
+  panel.replaceChildren();if(sel<0){panel.append(legend());return}
+  const p=P[sel],root=el("div");
+  root.append(el("h2",{},p.t),el("div",{class:"mut"},[p.a,p.y].filter(Boolean).join(", ")),el("div",{class:"tldr"},p.s+(p.s.length>=420?"…":"")));
+  const b1=el("button",{class:"pri"},"Open paper ↗");b1.onclick=()=>location.href=url(p);
+  const b2=el("button",{},"Clear");b2.onclick=()=>select(-1);
+  const btns=el("div",{style:"display:flex;gap:.5rem;margin:.4rem 0"});btns.append(b1,b2);root.append(btns);
+  const all=neighbours(p,true),hasCit=p.cites.length+p.citedby.length,count=t=>all.filter(n=>t==="cit"?n.cit:t==="ref"?n.shared:n.sim).length;
+  const tog=el("div",{class:"tog"});
+  for(const[k,label,col] of [["cit","Citations","var(--acc)"],["ref","Shared references","var(--ref)"],["txt","Similar text","var(--mut)"]]){
+    const cb=el("input",{type:"checkbox"});cb.checked=relOn[k];cb.onchange=()=>{relOn[k]=cb.checked;select(sel,false)};
+    const lab=el("label",{});lab.append(cb,el("span",{style:"color:"+col},label+" ("+count(k)+")"));tog.append(lab)}
+  root.append(tog);
+  if(!p.cd)root.append(el("p",{class:"mut"},"No citation data for this paper (no DOI/arXiv id), so only text-similar papers are available."));
+  else if(!hasCit&&!p.coup.length)root.append(el("p",{class:"mut"},"No citation links to other papers in your library."));
+  root.append(el("h3",{},"Neighbours ("+nbrs.length+")"));
+  nbrs.forEach(n=>{const q=P[n.i],row=el("div",{class:"nb"});const i=el("i",{class:"dot",style:"margin-top:.3rem"});i.style.background=colour(q);
+    const t=el("div",{class:"t"});t.append(el("b",{},q.t),el("span",{class:"mut"},[q.a,q.y].filter(Boolean).join(", ")+" "));
+    const chips=el("div",{});
+    if(n.cit&&relOn.cit)chips.append(el("span",{class:"chip cit"},n.cit==="out"?"cited by this paper":n.cit==="in"?"cites this paper":"cites both ways"));
+    if(n.shared&&relOn.ref)chips.append(el("span",{class:"chip ref"},n.shared+" shared refs"));
+    if(n.sim&&relOn.txt)chips.append(el("span",{class:"chip"},"text "+Math.round(n.sim*100)+"%"));
+    t.append(chips);const go=el("a",{class:"go",href:url(q),title:"Open paper"},"↗");go.onclick=e=>e.stopPropagation();
+    row.append(i,t,go);row.onclick=()=>select(n.i);
+    row.onmouseenter=()=>{dots[n.i].classList.add("sel")};row.onmouseleave=()=>{dots[n.i].classList.remove("sel")};root.append(row)});
+  if(!nbrs.length)root.append(el("p",{class:"mut"},"Nothing to show with the current toggles."));
+  panel.append(root);
+}
+
+// ---------- view: animated fit, pan, zoom ----------
+function animateTo(t,ms=450){cancelAnimationFrame(anim);const f0={...view},t0=performance.now();
+  const step=now=>{const u=Math.min(1,(now-t0)/ms),e=u*u*(3-2*u);view={x:f0.x+(t.x-f0.x)*e,y:f0.y+(t.y-f0.y)*e,k:f0.k+(t.k-f0.k)*e};place();if(u<1)anim=requestAnimationFrame(step)};anim=requestAnimationFrame(step)}
+function fitFocus(){
+  // Frame the focal paper and its nearest ~80% of neighbours; far outliers stay reachable from the side list.
+  const[fx,fy]=base(P[sel]),{w,h}=size();
+  const near=nbrs.map(n=>{const q=base(P[n.i]);return{q,d:Math.hypot(q[0]-fx,q[1]-fy)}}).sort((a,b)=>a.d-b.d);
+  const keep=near.slice(0,Math.max(5,Math.ceil(near.length*.8))).map(n=>n.q),pts=[[fx,fy],...keep];
+  const xs=pts.map(q=>q[0]),ys=pts.map(q=>q[1]),bw=Math.max(...xs)-Math.min(...xs)||1,bh=Math.max(...ys)-Math.min(...ys)||1;
+  const k=Math.max(.6,Math.min(7,Math.min(w*.72/bw,h*.72/bh))),cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;
+  animateTo({k,x:w/2-cx*k,y:h/2-cy*k});
+}
+let drag=null;
+svg.addEventListener("pointerdown",e=>{drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y,moved:false};moved=false});
+addEventListener("pointermove",e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+  if(Math.abs(dx)+Math.abs(dy)>4){drag.moved=moved=true;svg.classList.add("drag")}if(drag.moved){cancelAnimationFrame(anim);view.x=drag.vx+dx;view.y=drag.vy+dy;place()}});
+addEventListener("pointerup",()=>{svg.classList.remove("drag");drag=null;setTimeout(()=>{moved=false},0)});
+svg.addEventListener("click",e=>{if(e.target===svg&&!moved&&sel>=0)select(-1)});  // empty background clears the focus
+svg.addEventListener("wheel",e=>{e.preventDefault();cancelAnimationFrame(anim);const r=svg.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const k=Math.max(.5,Math.min(40,view.k*Math.exp(-e.deltaY*0.0015)));view.x=mx-(mx-view.x)*k/view.k;view.y=my-(my-view.y)*k/view.k;view.k=k;place()},{passive:false});
+addEventListener("keydown",e=>{if(e.key==="Escape"&&sel>=0)select(-1)});
+$("layout").onchange=e=>{const from=P.map(p=>base(p)),to=e.target.value,t0=performance.now();edgesG.replaceChildren();labelsG.replaceChildren();clabelsG.replaceChildren();
+  const step=t=>{const f=Math.min(1,(t-t0)/600),k=f*f*(3-2*f);
+    dots.forEach((c,i)=>{const[x,y]=base(P[i],to);c.setAttribute("cx",from[i][0]+(x-from[i][0])*k);c.setAttribute("cy",from[i][1]+(y-from[i][1])*k)});
+    if(f<1)requestAnimationFrame(step);else{layout=to;paint();place();if(sel>=0)fitFocus()}};requestAnimationFrame(step)};
+for(const id of["concept","year"])$(id).addEventListener("input",filter);
+$("q").addEventListener("input",filter);
+$("q").addEventListener("keydown",e=>{if(e.key==="Enter"){const m=P.find((p,i)=>vis[i]);if(m)select(m.i)}});
+function fromHash(){const h=decodeURIComponent(location.hash.slice(1)),i=P.findIndex(p=>p.id===h);if(i>=0)select(i)}
+addEventListener("hashchange",fromHash);
+addEventListener("resize",()=>{place()});
+build();renderPanel();fromHash();
+</script></body></html>

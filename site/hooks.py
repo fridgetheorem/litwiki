@@ -97,7 +97,9 @@ def _with_bib(markdown: str, here: str) -> str:
     entry = _bib.get(posixpath.basename(here).removesuffix(".md"))
     if not entry:
         return markdown
+    stem = posixpath.basename(here).removesuffix(".md")
     block = ('<div class="lw-bib"><button type="button" class="md-button md-button--primary lw-copy">Copy BibTeX</button> '
+             f'<a class="md-button" href="/clusters/#{quote(stem)}">Show on map</a> '
              '<details><summary>Show entry</summary><pre><code>' + html.escape(entry, quote=False) + '</code></pre></details></div>')
     i = markdown.find("\n## ")
     return markdown[:i] + "\n\n" + block + "\n" + markdown[i:] if i >= 0 else markdown + "\n\n" + block + "\n"

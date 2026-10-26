@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS candidates (
     seen TEXT DEFAULT (datetime('now')),
     score REAL, digest TEXT, status TEXT  -- triaged | digested | approved | ingested | rejected
 );
+CREATE TABLE IF NOT EXISTS cite_meta (
+    page TEXT PRIMARY KEY,         -- vault-relative paper page
+    oa_id TEXT,                    -- OpenAlex work id (https://openalex.org/W...)
+    refs TEXT,                     -- JSON list of OpenAlex ids this paper cites
+    cited_by INTEGER,              -- OpenAlex citation count
+    found INTEGER,                 -- 0 = not in OpenAlex / no DOI
+    fetched TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS notified (k TEXT PRIMARY KEY, ts TEXT DEFAULT (datetime('now')));
 """
 

@@ -83,6 +83,7 @@ def _fingerprint(cfg) -> str:
         st = p.stat()
         h.update(f"{rel}:{st.st_mtime_ns}:{st.st_size}\n".encode())
     h.update(repr(cfg.get("clusters")).encode())
+    h.update(repr(tuple(db().execute("SELECT COUNT(*), COALESCE(MAX(fetched),''), COALESCE(SUM(cited_by),0) FROM cite_meta").fetchone())).encode())
     for f in ("mkdocs.yml", "hooks.py"):
         h.update((SITE / f).read_bytes())
     return h.hexdigest()

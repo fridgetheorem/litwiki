@@ -98,6 +98,14 @@ Order comes from `ingested_at` in each paper's frontmatter (set when the page is
 `litwiki backfill-ingested` from the pipeline's ingest times (Zotero items), the add time (manual adds), or midnight of the `ingested` day
 (digest-approved pages made before the field existed). The home page's "Recently added" list uses the same order. Count: `RECENT_N` in `site/hooks.py`.
 
+**Focus mode.** Click a paper (or arrive from the **Show on map** button on its page, `/clusters/#<page-stem>`) to focus it: the map zooms to it and
+draws links to its neighbours, which are also listed in the side panel (click one to move the focus there; ↗ opens its page; Esc or a background click clears).
+Neighbour types, each toggleable: **citations** (solid blue; the paper cites it or is cited by it), **shared references** (dashed orange; bibliographic
+coupling, ≥2 shared references, top 8) and **similar text** (dotted grey; TF-IDF cosine on the TL;DR, top 8). Citation data comes from OpenAlex
+(`litwiki/citations.py`, table `cite_meta`; needs a DOI or arXiv id, so web pages only get text neighbours): `litwiki citations` fetches it, the hourly job
+tops it up for new papers. Dot size = citation count; labels are "Author Year" (plus a short title when zoomed or focused) and are placed greedily by
+importance without overlapping; concept names mark the map regions. The page template is `litwiki/map_page.html`.
+
 ## Schedule (crontab)
 - every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)

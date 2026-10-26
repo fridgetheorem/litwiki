@@ -140,6 +140,15 @@ def cmd_backfill_ingested(cfg, a):
     print(f"set ingested_at on {n} pages")
 
 
+def cmd_citations(cfg, a):
+    from .citations import graph, refresh
+    print(refresh(cfg, force=a.force))
+    g = graph(cfg)
+    n_edges = sum(len(v["cites"]) for v in g.values())
+    print(f"{len(g)} papers with citation data; {n_edges} citation links and "
+          f"{sum(1 for v in g.values() if v['coup'])} papers with shared-reference neighbours")
+
+
 def cmd_ask(cfg, a):
     from .ask import AskError, ask
     try:
@@ -175,6 +184,11 @@ def cmd_hourly(cfg, a):
         approved["failed"] = approved.get("failed", 0) + manual["failed"]
         approved["done"] = approved.get("done", 0) + manual["done"]
         z = ingest_zotero(cfg)
+        try:
+            from .citations import refresh as refresh_citations
+            refresh_citations(cfg)  # new papers only; a failed lookup just retries next hour
+        except Exception:
+            log.exception("citation refresh failed")
         if z["failed"] or approved.get("failed"):
             notify(f"Hourly run: {z['failed'] + approved.get('failed', 0)} item(s) failed to ingest. "
                    "See `litwiki status`.", level="warn")
@@ -222,6 +236,9 @@ def main():
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
     sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
     sub.add_parser("backfill-ingested", help="one-off: add precise ingested_at to existing paper pages").set_defaults(f=cmd_backfill_ingested)
+    sp = sub.add_parser("citations", help="fetch citation data from OpenAlex for papers that lack it")
+    sp.add_argument("--force", action="store_true", help="re-fetch everything")
+    sp.set_defaults(f=cmd_citations)
     sp = sub.add_parser("ask", help="ask a question about the whole library (or a filtered part)")
     sp.add_argument("question", nargs="+")
     sp.add_argument("--concept", help="only papers in this concept slug")
