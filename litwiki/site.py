@@ -104,7 +104,8 @@ def _build(cfg, force: bool) -> dict:
     out = SITE / f"build-{int(t0)}"
     mkdocs = Path(sys.executable).with_name("mkdocs")
     proc = subprocess.run([str(mkdocs), "build", "-q", "-f", str(SITE / "mkdocs.yml"), "-d", str(out)],
-                          capture_output=True, text=True, cwd=SITE)
+                          capture_output=True, text=True, cwd=SITE,
+                          env={**os.environ, "LITWIKI_VAULT": str(cfg["vault"])})
     if proc.returncode != 0:
         shutil.rmtree(out, ignore_errors=True)
         raise RuntimeError(f"mkdocs build failed: {proc.stderr[-1500:]}")

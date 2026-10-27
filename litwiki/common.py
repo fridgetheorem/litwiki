@@ -42,11 +42,22 @@ def load_env(path: Path = Path.home() / ".env") -> None:
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+DEPLOY_DEFAULTS = {
+    "ports": {"site": 8080, "web": 8081},
+    "syncthing": {"home": "~/.config/syncthing-litwiki", "gui_address": "127.0.0.1:8384"},
+    "schedule": {"hourly_minute": 17, "daily_hour_utc": 10},
+}
+
+
 def load_config() -> dict:
     load_env()
-    cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
+    path = ROOT / "config.yaml"
+    if not path.exists():
+        raise SystemExit(f"{path} not found: copy config.example.yaml to config.yaml and edit it (see README.md)")
+    cfg = yaml.safe_load(path.read_text()) or {}
+    for section, defaults in DEPLOY_DEFAULTS.items():
+        cfg[section] = {**defaults, **(cfg.get(section) or {})}
     cfg["vault"] = Path(os.path.expanduser(cfg["vault"]))
-    cfg["site_dir"] = Path(os.path.expanduser(cfg["site_dir"]))
     return cfg
 
 

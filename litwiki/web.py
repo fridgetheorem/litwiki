@@ -27,7 +27,6 @@ from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, s
 from .discover import tick_items
 from .llm import spent
 
-PORT = 8081
 SESSION_DAYS = 30
 CFG = None  # loaded in create_app
 
@@ -525,4 +524,4 @@ def serve(cfg) -> None:
     if not os.environ.get("LITWIKI_WEB_PASSWORD"):
         raise SystemExit("LITWIKI_WEB_PASSWORD is not set in ~/.env")
     os.environ["PATH"] = f"{Path.home() / '.local/bin'}:{os.environ.get('PATH', '')}"  # for `claude` in jobs
-    uvicorn.run(create_app(cfg), host="127.0.0.1", port=PORT, log_level="warning", access_log=False)
+    uvicorn.run(create_app(cfg), host="127.0.0.1", port=int(cfg["ports"]["web"]), log_level="warning", access_log=False)

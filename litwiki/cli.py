@@ -1,5 +1,6 @@
 """litwiki command line. Cron calls `hourly` and `daily`; the rest are for manual use."""
 import argparse
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -110,6 +111,31 @@ def cmd_web_queue(cfg, a):
         manual = ingest_manual(cfg)
         log.info("web-queue: approved=%s manual=%s", approved, manual)
     build(cfg)
+
+
+def cmd_config_env(cfg, a):
+    """Shell exports for bin/watchdog.sh and the Caddyfile, so config.yaml is the only place paths and ports live."""
+    import shlex
+    from .common import LOG_DIR, ROOT
+    st = cfg["syncthing"]
+    env = {
+        "LITWIKI_VAULT": cfg["vault"], "LITWIKI_SITE_ROOT": ROOT / "site" / "current", "LITWIKI_LOGS": LOG_DIR,
+        "LITWIKI_SITE_PORT": cfg["ports"]["site"], "LITWIKI_WEB_PORT": cfg["ports"]["web"],
+        "SYNCTHING_HOME": os.path.expanduser(st["home"]), "SYNCTHING_GUI": st["gui_address"],
+    }
+    for k, v in env.items():
+        print(f"export {k}={shlex.quote(str(v))}")
+
+
+def cmd_cron(cfg, a):
+    """Print the crontab lines for this install (append with: (crontab -l; litwiki cron) | crontab -)."""
+    from .common import ROOT
+    sc = cfg["schedule"]
+    print(f"@reboot      {ROOT}/bin/watchdog.sh  # litwiki\n"
+          f"*/5 * * * *  {ROOT}/bin/watchdog.sh  # litwiki\n"
+          f"{int(sc['hourly_minute'])} * * * *   {ROOT}/bin/run.sh hourly  # litwiki: Zotero sync, ingest, site rebuild\n"
+          f"0 {int(sc['daily_hour_utc'])} * * *   {ROOT}/bin/run.sh daily   # litwiki: discovery digest "
+          f"(crontab times are in the host's timezone; check `date`)")
 
 
 def cmd_serve(cfg, a):
@@ -234,7 +260,9 @@ def main():
     sp.set_defaults(f=cmd_review_new)
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
-    sub.add_parser("serve", help="run the web UI (127.0.0.1:8081, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sub.add_parser("serve", help="run the web UI (ports.web in config.yaml, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sub.add_parser("config-env", help="print shell exports derived from config.yaml (used by watchdog.sh)").set_defaults(f=cmd_config_env)
+    sub.add_parser("cron", help="print the crontab lines for this install").set_defaults(f=cmd_cron)
     sub.add_parser("backfill-ingested", help="one-off: add precise ingested_at to existing paper pages").set_defaults(f=cmd_backfill_ingested)
     sp = sub.add_parser("citations", help="fetch citation data from OpenAlex for papers that lack it")
     sp.add_argument("--force", action="store_true", help="re-fetch everything")

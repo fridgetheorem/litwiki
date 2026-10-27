@@ -1,5 +1,5 @@
 site_name: Literature Wiki
-docs_dir: /home/user/vault
+docs_dir: !ENV LITWIKI_VAULT  # set by litwiki from config.yaml
 use_directory_urls: true
 strict: false
 

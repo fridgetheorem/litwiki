@@ -4,13 +4,14 @@
 	persist_config off
 }
 
-# Listens on localhost only, for any Host header (tailscale serve forwards the tailnet
-# hostname). Expose to the tailnet with: tailscale serve --bg --http=8080 http://127.0.0.1:8080
-http://:8080 {
+# Paths and ports come from config.yaml via `litwiki config-env` (bin/watchdog.sh exports them).
+# Listens on localhost only, for any Host header (tailscale serve forwards the tailnet hostname).
+# Expose to the tailnet with: sudo tailscale serve --bg --http=<ports.site> http://127.0.0.1:<ports.site>
+http://:{$LITWIKI_SITE_PORT} {
 	bind 127.0.0.1
 	encode gzip
 	handle_path /_pdfs/* {
-		root * /home/user/vault/_pdfs
+		root * {$LITWIKI_VAULT}/_pdfs
 		# Stored web snapshots must not run scripts on the wiki's origin.
 		header Content-Security-Policy "sandbox"
 		file_server
@@ -20,22 +21,22 @@ http://:8080 {
 		request_body {
 			max_size 80MB
 		}
-		reverse_proxy 127.0.0.1:8081
+		reverse_proxy 127.0.0.1:{$LITWIKI_WEB_PORT}
 	}
 	handle /app {
 		redir /app/ 308
 	}
 	handle {
-		root * /home/user/litwiki/site/current
+		root * {$LITWIKI_SITE_ROOT}
 		file_server
 	}
 	handle_errors {
 		rewrite * /404.html
-		root * /home/user/litwiki/site/current
+		root * {$LITWIKI_SITE_ROOT}
 		file_server
 	}
 	log {
-		output file /home/user/litwiki/logs/caddy.log {
+		output file {$LITWIKI_LOGS}/caddy.log {
 			roll_size 5MiB
 			roll_keep 2
 		}
