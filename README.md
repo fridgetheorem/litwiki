@@ -1,18 +1,75 @@
 # litwiki
 
-A lightweight literature-review wiki: a Markdown vault (`~/vault`) that you read and edit in Obsidian
-and browse on the web, built automatically from your Zotero library and a daily literature search.
+A lightweight literature-review wiki: a Markdown vault that you read and edit in Obsidian and browse on the web,
+built automatically from your Zotero library and a literature search of arXiv, OpenAlex and RSS feeds.
+Claude summarises each paper with page-cited, verified quotes; you tick what to ingest.
 
 ```
-Zotero (cloud, read-only key) ──┐
-                                ├─► claude -p (summary + verified quotes) ─► ~/vault/papers/*.md
-arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian]─┘           │
-                                                          concept backlinks ◄────┘
-~/vault ◄─► Syncthing ◄─► Obsidian (your devices)
-~/vault ─► MkDocs (hourly, if changed) ─► Caddy :8080 (localhost) ─► `tailscale serve --bg --http=8080 http://127.0.0.1:8080`
+Zotero (read-only key) ──┐
+                         ├─► claude -p (summary + verified quotes) ─► <vault>/papers/*.md
+arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian / web / Discord]─┘      │
+                                                                 concept backlinks ◄────────┘
+<vault> ◄─► Syncthing ◄─► Obsidian (your devices)
+<vault> ─► MkDocs (hourly, if changed) ─► Caddy (localhost) ─► tailscale serve / SSH tunnel ─► your browser
 ```
 
-Served on the tailnet at `http://litwiki.example.ts.net:8080/` (the machine's Tailscale name; `tailscale serve` is bound to that name, so after a rename run `tailscale serve reset` and the command above again).
+## Set up your own deployment
+
+**Everything you need to change lives in one file, `config.yaml`** (copied from `config.example.yaml`), plus
+secrets in `~/.env`. No tracked file contains paths, hostnames or IDs of any particular machine; the Caddyfile,
+`mkdocs.yml` and the helper scripts take their paths and ports from `config.yaml`.
+
+### Prerequisites
+A Linux host (or always-on machine) with: Python ≥ 3.11, `git`, `cron`,
+[Claude Code](https://docs.claude.com/en/docs/claude-code) (the `claude` CLI, on `PATH` as `~/.local/bin/claude`),
+[Caddy](https://caddyserver.com/docs/install), and optionally [Syncthing](https://syncthing.net/) (to sync the vault to
+Obsidian on your devices) and [Tailscale](https://tailscale.com/) (to reach the site privately from your devices).
+You also need a Zotero account and an Anthropic API key (console.anthropic.com).
+
+### Steps
+1. **Install**
+   ```
+   git clone <this repo> ~/litwiki && cd ~/litwiki
+   python3 -m venv .venv && .venv/bin/pip install -e .
+   ```
+   (`bin/` scripts find the repo from their own location, so it can live anywhere.)
+2. **Configure.** `cp config.example.yaml config.yaml` and edit the "Set these" section: `vault` (where the Markdown
+   lives), `zotero.user_id`, `zotero.exclude_collections`, optionally `site_url`. Ports, Syncthing, schedule and the
+   LLM budget caps are below it with defaults. The budget caps are real money limits: check `budget:` before the first run.
+3. **Add secrets.** `cp .env.example ~/.env && chmod 600 ~/.env`, then fill in:
+   - `ZOTERO_API_KEY`: Zotero → Settings → Feeds/API → new key, **read-only** access to your library.
+   - `ANTHROPIC_API_KEY`: an API key. **This matters:** without it `claude -p` silently uses a Claude subscription login,
+     which hits session limits (summaries fail with "You've hit your session limit") and makes the dollar budgets meaningless.
+   - `LITWIKI_WEB_PASSWORD`: any long random string; the password for the `/app/` web UI.
+   - optional `DISCORD_WEBHOOK_URL` / `DISCORD_BOT_TOKEN` (see "Discord bot" below).
+4. **Smoke-test.**
+   ```
+   .venv/bin/litwiki sync                 # pulls your Zotero library into state/state.db (no LLM use)
+   .venv/bin/litwiki status               # items queued, spend so far
+   .venv/bin/litwiki bootstrap            # one LLM call: proposes ~20-35 concept pages from your library
+   .venv/bin/litwiki ingest --limit 3     # summarise 3 papers (~$0.05-0.15 each); open them in <vault>/papers/
+   ```
+5. **Schedule it.** Install the cron entries (they are generated from `schedule:` in `config.yaml`):
+   ```
+   (crontab -l 2>/dev/null; .venv/bin/litwiki cron) | crontab -
+   bin/watchdog.sh                        # starts Caddy, the web UI, Syncthing now (cron then keeps them alive)
+   ```
+   Hourly: Zotero sync → ingest → site rebuild. Daily: discovery digest. The rest of your library is summarised in the
+   background, limited per day by `budget.backfill_daily_usd`; `litwiki status` shows progress.
+6. **Reach the site.** Caddy listens on `127.0.0.1:<ports.site>` only. Either
+   - `sudo tailscale serve --bg --http=8080 http://127.0.0.1:8080` and open `http://<host>.<your-tailnet>.ts.net:8080`
+     (tailnet-only; the web UI additionally needs `LITWIKI_WEB_PASSWORD`), or
+   - `ssh -L 8080:localhost:8080 you@host` and open `http://localhost:8080`.
+7. **Open the vault in Obsidian (optional).** Syncthing's admin page is `http://127.0.0.1:<syncthing.gui_address>` on the host
+   (tunnel it the same way; the first visit asks you to set a GUI password). Share the vault folder with your device,
+   install Syncthing there, accept, and open the synced folder as an Obsidian vault. Sync uses TCP/UDP 22000 and UDP 21027;
+   relays are on by default, so no port forwarding is needed.
+
+### Troubleshooting
+- **"You've hit your session limit" in `litwiki status`:** `ANTHROPIC_API_KEY` is missing or not being read (step 3). Then `litwiki retry`.
+- **Blank page through Tailscale:** the Caddyfile must match any Host header (it does by default); restart Caddy after editing it.
+- **After editing `config.yaml`:** ports and paths are read by the watchdog at start; `pkill caddy` (and `pkill -f "bin/litwiki serve"`) and run `bin/watchdog.sh`.
+- Logs: `logs/{hourly,daily,manual,watchdog}.log`, `logs/{caddy,web,discord}.out`.
 
 ## Vault layout
 
@@ -33,7 +90,7 @@ found the claim is marked **⚠ quote not found — check**. `claims_verified: n
 Page numbers are *PDF* page indices (what `#page=N` opens), not printed page numbers.
 
 ## Tags (Obsidian)
-Paper pages carry a native `tags:` property: `col/<collection path>` (nested, so `tag:#col/masters` matches
+Paper pages carry a native `tags:` property: `col/<collection path>` (nested, so `tag:#col/projects` matches
 everything below it), `zt/<zotero tag>`, `concept/<slug>`, `source/<origin>` and `review/<slug>`. litwiki only
 rewrites tags with those prefixes; tags you add yourself are kept. `litwiki retag` refreshes all pages.
 
@@ -44,7 +101,7 @@ arXiv + OpenAlex back to `since_year`, scores candidates against your question/s
 tick. Papers ingested from it get `#review/my-review`. Runs are manual only; the daily job is unchanged.
 
 ## Web UI (`/app/`)
-Log in at `http://litwiki.example.ts.net:8080/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the static site itself stays open to the tailnet).
+Log in at `<your site>/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the static site itself stays open to the tailnet).
 - **Add**: paste DOIs / arXiv IDs / URLs (one per line) or upload PDFs, optionally attaching a review or concept. Items are queued
   (`candidates`, `digest='web'`) and ingested immediately via `litwiki web-queue` (also swept by the hourly job). Failed items get a Retry button.
   User-supplied URLs are fetched only from public addresses (no loopback / private / tailnet, checked on every redirect).
@@ -107,14 +164,15 @@ tops it up for new papers. Dot size = citation count; labels are "Author Year" (
 importance without overlapping; concept names mark the map regions. The page template is `litwiki/map_page.html`.
 
 ## Schedule (crontab)
-- every 5 min: `bin/watchdog.sh` keeps Caddy + Syncthing alive (no systemd lingering on this host)
+- every 5 min: `bin/watchdog.sh` keeps Caddy, Syncthing, the web UI and the Discord bot alive (no systemd needed)
 - hourly :17: `litwiki hourly` — Zotero sync → ingest approved digest items → ingest Zotero queue → health checks → rebuild site if the vault changed (this is also how Obsidian edits reach the web)
-- daily 10:00 UTC: `litwiki daily` — discovery digest + Discord notification
+- daily: `litwiki daily` — discovery digest + Discord notification
+(Times come from `schedule:` in `config.yaml`; `litwiki cron` prints the crontab lines.)
 
 ## Budget
 All LLM calls go through `litwiki/llm.py`, which records `total_cost_usd` per call in `state/state.db`.
-- monthly hard stop $50 (warn at 80%), daily hard stop $4 (anomaly guard), per-call cap $1 (`--max-budget-usd`)
-- the pre-existing Zotero backlog is metered at $1.20/day (~11 papers/day at ~$0.11/paper); items added to Zotero after install and approved digest items aren't subject to that meter (only the daily/monthly caps)
+- monthly hard stop (warn at 80%), daily hard stop (anomaly guard) and a per-call cap (`--max-budget-usd`); all set under `budget:` / `llm:` in `config.yaml`
+- the pre-existing Zotero backlog is metered separately (`budget.backfill_daily_usd`; roughly $0.05-0.11 per paper); items added to Zotero after install and approved digest items aren't subject to that meter (only the daily/monthly caps)
 - every stop/warning is sent to Discord. Tune in `config.yaml`.
 
 ## Commands
@@ -123,9 +181,10 @@ All LLM calls go through `litwiki/llm.py`, which records `total_cost_usd` per ca
 .venv/bin/litwiki sync|ingest [--limit N]|discover|approved|build [--force]
 .venv/bin/litwiki retry         # requeue failed items
 .venv/bin/litwiki notify-test   # check Discord
-.venv/bin/litwiki bootstrap     # (one-off, already run) propose concept pages from the library
+.venv/bin/litwiki bootstrap     # (one-off) propose concept pages from the library
+.venv/bin/litwiki cron          # print crontab lines;  config-env prints the exports the watchdog uses
 ```
 Logs: `logs/{hourly,daily,manual}.log`, `logs/notifications.log`.
 
 ## Secrets (`~/.env`, mode 600)
-`ZOTERO_API_KEY` (read-only), `DISCORD_WEBHOOK_URL`, `SYNCTHING_GUI_USER/PASSWORD`.
+See `.env.example`: `ZOTERO_API_KEY` (read-only), `ANTHROPIC_API_KEY`, `LITWIKI_WEB_PASSWORD`, optional `DISCORD_WEBHOOK_URL`, `DISCORD_BOT_TOKEN`.

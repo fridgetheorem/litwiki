@@ -94,7 +94,7 @@ def _tag_slug(text: str) -> str:
 
 def managed_tags(fm: dict) -> list[str]:
     """Tags derived from frontmatter, in Obsidian's native `tags` property so tag search / the
-    tag pane work. Nested (a/b/c): searching `tag:#col/masters` also matches `col/masters/thesis/...`."""
+    tag pane work. Nested (a/b/c): searching `tag:#col/projects` also matches `col/projects/thesis/...`."""
     tags = []
     for c in fm.get("collections") or []:
         segs = [_tag_slug(x) for x in str(c).split(" / ")]
