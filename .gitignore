@@ -5,3 +5,4 @@ site/build-*/
 site/current
 site/current.tmp
 __pycache__/
+config.yaml

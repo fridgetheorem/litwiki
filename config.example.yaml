@@ -1,0 +1,80 @@
+# litwiki configuration: the one file to edit for a deployment.
+#   cp config.example.yaml config.yaml   (config.yaml is git-ignored)
+# Secrets (API keys, passwords) do NOT go here; they go in ~/.env (see .env.example).
+# Paths starting with ~ are expanded. Everything below the first section has a sensible default.
+
+# ───────────── 1. Set these ─────────────
+
+# Markdown vault: the folder you open in Obsidian. Created on first use.
+vault: ~/vault
+
+# Address you browse the wiki at (only used for links in Discord messages), e.g. "http://litwiki.my-tailnet.ts.net:8080".
+# Leave empty if you don't use Discord.
+site_url: ""
+
+zotero:
+  # Your numeric Zotero user ID: zotero.org -> Settings -> Feeds/API ("Your userID for use in API calls").
+  user_id: 0
+  # Items only in these collections (or their sub-collections) are ignored.
+  exclude_collections: []
+  # Item types never turned into pages.
+  skip_item_types: [attachment, note, annotation]
+
+# ───────────── 2. Where things run ─────────────
+
+ports:
+  site: 8080                 # Caddy, bound to 127.0.0.1 (expose with `tailscale serve`, see README)
+  web: 8081                  # the /app/ web UI, 127.0.0.1 behind Caddy
+
+syncthing:
+  home: ~/.config/syncthing-litwiki
+  gui_address: 127.0.0.1:8384
+
+schedule:                    # used by `litwiki cron`; times are in the host's timezone (check `date`)
+  hourly_minute: 17          # Zotero sync + ingest + site rebuild, every hour at :17
+  daily_hour_utc: 10         # discovery digest, once a day at this hour (host timezone despite the name)
+
+# ───────────── 3. LLM and budget ─────────────
+
+llm:
+  summary_model: sonnet      # paper summaries + claim extraction
+  ask_model: sonnet          # `litwiki ask`, web Ask page, Discord /ask
+  triage_model: haiku        # discovery relevance scoring
+  max_text_chars: 120000     # fulltext sent per paper (~30k tokens); longer docs are truncated
+  per_call_budget_usd: 1.00  # hard cap passed to `claude --max-budget-usd`
+
+budget:                      # enforced from the cost reported by each call (requires ANTHROPIC_API_KEY, see README)
+  ask_daily_usd: 3.0         # separate cap on library questions (each ≈ $0.15-0.30)
+  monthly_usd: 50.0          # hard stop for all LLM calls
+  warn_fraction: 0.8         # notify once when month spend crosses this
+  daily_usd: 5.0             # hard stop for the day + notify (anomaly guard)
+  backfill_daily_usd: 1.5    # existing-Zotero-library backlog (~$0.05-0.11/paper) pauses for the day past this
+
+# ───────────── 4. Literature discovery ─────────────
+
+discovery:
+  lookback_days: 4           # arXiv + feeds search window (overlaps; duplicates are filtered)
+  openalex_lookback_days: 21 # journals are indexed with a lag, so look further back
+  max_per_concept: 15        # raw candidates fetched per concept per source
+  digest_max: 15             # max items in a daily digest
+  min_score: 6               # triage relevance threshold (0-10)
+  openalex_mailto: ""        # optional: your email for OpenAlex's polite pool
+  # Optional institutional proxy prefix used for links to paywalled items, e.g.
+  # "https://login.proxy.lib.example.edu/login?url="
+  proxy_prefix: ""
+  # Blog / news feeds (RSS or Atom). Entries are triaged like papers.
+  feeds: []
+    # - https://blog.trailofbits.com/feed/
+
+# ───────────── 5. Extras ─────────────
+
+clusters:
+  # Page sections ("## Heading") whose text is TF-IDF-vectorised for the map's "text similarity" layout.
+  sections: ["TL;DR"]
+  min_df: 2                  # ignore terms that appear in fewer than this many papers
+
+discord:
+  # The bot (DISCORD_BOT_TOKEN in ~/.env) picks a channel itself and remembers it; `/here` moves it.
+  # channel_id: 123456789012345678     # optional: force a channel
+  backfill_days: 2           # on first start only post digests from the last N days
+  # allowed_user_ids: []     # extra user IDs besides the application's owner / team
