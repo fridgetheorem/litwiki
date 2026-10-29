@@ -138,6 +138,64 @@ def cmd_cron(cfg, a):
           f"(crontab times are in the host's timezone; check `date`)")
 
 
+def _describe(fm) -> str:
+    keys = ",".join(k for k in [fm.get("zotero_key"), *(fm.get("also_zotero_keys") or [])] if k) or fm.get("source", "?")
+    return (f"{fm['_stem']}  [{keys}; {fm.get('source', '?').split(':')[0]}, {fm.get('year') or 'n.d.'}, "
+            f"{'fulltext' if fm.get('fulltext') else 'abstract-only'}, {len(fm.get('concepts') or [])} concepts]")
+
+
+def _show_group(g) -> None:
+    print(f"\n{' + '.join(g['reasons'])}")
+    print(f"  keep  {_describe(g['keep'])}")
+    for d in g["drop"]:
+        print(f"  merge {_describe(d)}")
+
+
+def cmd_dupes(cfg, a):
+    """List pages that are the same paper (same DOI / arXiv id / identical title). Nothing is changed."""
+    from .dedupe import find_groups
+    groups = find_groups(cfg["vault"])
+    for g in groups:
+        _show_group(g)
+    n = sum(len(g["drop"]) for g in groups)
+    print(f"\n{len(groups)} duplicate group(s), {n} page(s) would be merged away. "
+          "Run `litwiki dedupe --yes` to merge them all, or `litwiki merge KEEP DROP...` for one.")
+
+
+def cmd_dedupe(cfg, a):
+    """Merge every duplicate group (dry run unless --yes)."""
+    from .dedupe import find_groups, merge
+    from .site import build
+    groups = find_groups(cfg["vault"])
+    for g in groups:
+        _show_group(g)
+    if not a.yes:
+        print(f"\ndry run: {len(groups)} group(s). Re-run with --yes to merge.")
+        return
+    with run_lock():
+        con = db()
+        for g in groups:
+            r = merge(cfg, con, g["keep"]["_stem"], [d["_stem"] for d in g["drop"]])
+            print(f"merged {len(r['dropped'])} into {r['keep']} (+{len(r['concepts_added'])} concepts, "
+                  f"{r['links_rewritten']} link file(s) updated)")
+    build(cfg)
+
+
+def cmd_merge(cfg, a):
+    """Merge pages (stems or Zotero keys) into KEEP, whether or not they look like duplicates."""
+    from .dedupe import merge, resolve
+    from .site import build
+    v = cfg["vault"]
+    keep, drops = resolve(v, a.keep), [resolve(v, d) for d in a.drop]
+    with run_lock():
+        r = merge(cfg, db(), keep, drops, dry_run=a.dry_run)
+    verb = "would merge" if a.dry_run else "merged"
+    print(f"{verb} {', '.join(r['dropped'])} into {r['keep']}"
+          f" (+{len(r['concepts_added'])} concepts: {', '.join(r['concepts_added']) or 'none'}; notes: {', '.join(r['notes_merged']) or 'none'})")
+    if not a.dry_run:
+        build(cfg)
+
+
 def cmd_serve(cfg, a):
     from .web import serve
     serve(cfg)
@@ -261,6 +319,15 @@ def main():
     sub.add_parser("notify-test", help="send a test Discord notification").set_defaults(f=cmd_notify_test)
     sub.add_parser("web-queue", help="ingest approved digest items + web-added items now").set_defaults(f=cmd_web_queue)
     sub.add_parser("serve", help="run the web UI (ports.web in config.yaml, behind Caddy at /app/)").set_defaults(f=cmd_serve)
+    sub.add_parser("dupes", help="list duplicate paper pages (same DOI / arXiv id / title); changes nothing").set_defaults(f=cmd_dupes)
+    sp = sub.add_parser("dedupe", help="merge all duplicate groups (dry run unless --yes)")
+    sp.add_argument("--yes", action="store_true")
+    sp.set_defaults(f=cmd_dedupe)
+    sp = sub.add_parser("merge", help="merge pages into KEEP (stems or Zotero keys)")
+    sp.add_argument("keep")
+    sp.add_argument("drop", nargs="+")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(f=cmd_merge)
     sub.add_parser("config-env", help="print shell exports derived from config.yaml (used by watchdog.sh)").set_defaults(f=cmd_config_env)
     sub.add_parser("cron", help="print the crontab lines for this install").set_defaults(f=cmd_cron)
     sub.add_parser("backfill-ingested", help="one-off: add precise ingested_at to existing paper pages").set_defaults(f=cmd_backfill_ingested)

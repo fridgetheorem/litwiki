@@ -124,6 +124,19 @@ def add_backlink(vault: Path, concept_slug: str, paper_page: str, title: str, ye
     return True
 
 
+def backlink_why(vault: Path, concept_slug: str, paper_page: str) -> str | None:
+    """The ' — why' text of a paper's line in a concept page, if it has one."""
+    path = vault / CONCEPTS / f"{concept_slug}.md"
+    if not path.exists():
+        return None
+    target = paper_page.removesuffix(".md")
+    _, body = read_page(path)
+    for l in get_block(body, "papers").splitlines():
+        if (m := _LINE_TARGET.search(l)) and m.group(1).strip() == target and " — " in l:
+            return l.split(" — ", 1)[1].strip()
+    return None
+
+
 def remove_backlinks(vault: Path, paper_page: str) -> None:
     target = paper_page.removesuffix(".md")
     for p in (vault / CONCEPTS).glob("*.md"):

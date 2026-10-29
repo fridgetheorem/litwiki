@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 
 import requests
 
-from . import textract, vault
+from . import dedupe, textract, vault
 from .common import db, kv_get, log, read_page, write_page
 from .llm import BudgetExceeded, claude, spent_purpose_today
 from .zotero import Zotero, best_attachment, children, collection_paths
@@ -277,9 +277,15 @@ def refresh_metadata(cfg, con, row) -> None:
         meta = zotero_meta(con, d)
         fm, body = read_page(path)
         changed = False
-        for k in ("title", "authors", "year", "venue", "doi", "url", "zotero_tags", "collections"):
-            if meta.get(k) not in (None, "") and fm.get(k) != meta[k]:
-                fm[k], changed = meta[k], True
+        if fm.get("zotero_key") in (None, row["key"]):
+            for k in ("title", "authors", "year", "venue", "doi", "url", "zotero_tags", "collections"):
+                if meta.get(k) not in (None, "") and fm.get(k) != meta[k]:
+                    fm[k], changed = meta[k], True
+        else:  # a duplicate Zotero item merged into this page: it may add collections/tags but never overwrite metadata
+            for k in ("zotero_tags", "collections"):
+                merged = sorted(set(fm.get(k) or []) | set(meta[k]))
+                if merged != sorted(fm.get(k) or []):
+                    fm[k], changed = merged, True
         changed = apply_tags(fm) or changed
         if changed:
             write_page(path, fm, body)
@@ -310,7 +316,13 @@ def ingest_zotero(cfg, limit: int | None = None) -> dict:
             meta = zotero_meta(con, d)
             page = None
             path, fm = find_page(cfg["vault"], meta["doi"], meta["title"])
-            if path and str(fm.get("source", "")).startswith("discovery"):
+            if path and not str(fm.get("source", "")).startswith("discovery") and fm.get("zotero_key") != d["key"] \
+                    and dedupe.same_paper(fm, meta):
+                # Already have this paper (a duplicate Zotero item): file it under the existing page, no new summary.
+                page = f"{vault.PAPERS}/{path.name}"
+                dedupe.attach_zotero_item(path, d["key"], meta)
+                log.info("zotero %s is a duplicate of %s: attached, not re-summarised", d["key"], path.stem)
+            elif path and str(fm.get("source", "")).startswith("discovery"):
                 # Saved to Zotero after being discovered: adopt the existing page.
                 page = f"{vault.PAPERS}/{path.name}"
                 if fm.get("fulltext", True):
