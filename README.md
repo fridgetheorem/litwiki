@@ -89,6 +89,22 @@ is searched for in the extracted text: if it is on another page the page number 
 found the claim is marked **⚠ quote not found — check**. `claims_verified: n/m` is in each page's frontmatter.
 Page numbers are *PDF* page indices (what `#page=N` opens), not printed page numbers.
 
+## Duplicates
+The same paper can appear twice (added twice in Zotero, a bare arXiv link next to the real item, a preprint and its published
+version). Pages count as duplicates when they share a **DOI**, an **arXiv id**, or an identical title (>= 20 characters, with
+overlapping authors or none); similar-but-different titles such as "Lecture 02" / "Lecture 03" are never matched.
+```
+litwiki dupes                      # list duplicate groups and which page would be kept (changes nothing)
+litwiki dedupe [--yes]             # merge every group (dry run unless --yes)
+litwiki merge KEEP DROP... [--dry-run]   # merge specific pages (stems or Zotero keys), duplicates or not
+```
+The kept page is the one you edited or took notes on, else the one with a real title, DOI and full text. Merging unions collections,
+Zotero tags, concepts and `review/` tags; records the other Zotero keys in `also_zotero_keys` (so syncs never recreate or overwrite
+the page); appends the dropped pages' notes; rewrites `[[links]]` to the dropped pages; keeps their old names as Obsidian `aliases`;
+and fixes the concept pages' paper lists. The kept page's body is not rewritten. New Zotero items that duplicate an existing page are
+attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
+duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
+
 ## Tags (Obsidian)
 Paper pages carry a native `tags:` property: `col/<collection path>` (nested, so `tag:#col/projects` matches
 everything below it), `zt/<zotero tag>`, `concept/<slug>`, `source/<origin>` and `review/<slug>`. litwiki only
