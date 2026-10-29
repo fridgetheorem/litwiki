@@ -165,6 +165,12 @@ Titles are double-braced to keep capitalisation; `& % $ # _` are escaped. The si
 when `navigator.clipboard` is unavailable. Entries are only as good as the Zotero metadata (web pages come out as `@misc` without authors).
 Changing `bibtex.py` needs `litwiki build --force`.
 
+## Citations on paper pages
+Each paper page on the site ends with **Citations & related papers**, the same data the map shows when you focus a paper: the OpenAlex
+citation count, library papers it **cites** / is **cited by**, papers sharing **references** with it, and papers with **similar text**,
+plus a *Show on map* link. It is generated at build time from `state/related.json` (written by the same step as the map data), so it is
+site-only: the Markdown in the vault is not changed. Papers without a DOI or arXiv id have no citation data and show only similar text.
+
 ## Recently added sidebar
 The top of the wiki's left sidebar (and mobile drawer) lists the 20 most recently ingested papers (collapsible; title, authors, year, day).
 Order comes from `ingested_at` in each paper's frontmatter (set when the page is created); older pages were backfilled with
