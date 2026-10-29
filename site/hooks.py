@@ -21,6 +21,7 @@ _back: dict[str, set] = defaultdict(set)
 _out: dict[str, set] = defaultdict(set)
 _bib: dict[str, str] = {}           # paper stem -> BibTeX entry
 _recent: list[dict] = []            # newest ingested papers, for the sidebar block
+_related: dict = {}                 # per-paper citation / similarity neighbours (state/related.json)
 RECENT_N = 20
 
 
@@ -35,7 +36,12 @@ def _slug(h: str) -> str:
 
 def on_files(files: Files, config):
     _index.clear(); _titles.clear(); _back.clear(); _out.clear(); _bib.clear()
-    _recent.clear()
+    _recent.clear(); _related.clear()
+    try:
+        from litwiki import citations
+        _related.update(citations.load_related())
+    except Exception as e:
+        print(f"WARNING: related-papers data unavailable: {e}")
     try:
         from pathlib import Path
         from litwiki.bibtex import build_all
@@ -92,6 +98,17 @@ def _with_notes(markdown: str, here: str, config) -> str:
             + f"[{label}](/app/notes/{stem}){{ .md-button }}\n")
 
 
+def _with_citations(markdown: str, here: str) -> str:
+    """Citations & related papers (the data behind the map's focus mode), before the notes block."""
+    try:
+        from litwiki.citations import section_markdown
+        block = section_markdown(posixpath.basename(here).removesuffix(".md"), _related)
+    except Exception as e:  # an extra: never break the page
+        print(f"WARNING: citations section failed for {here}: {e}")
+        return markdown
+    return markdown.rstrip() + "\n\n" + block if block else markdown
+
+
 def _with_bib(markdown: str, here: str) -> str:
     """Copy-BibTeX button (plus a collapsible preview) before the first section of a paper page."""
     entry = _bib.get(posixpath.basename(here).removesuffix(".md"))
@@ -109,6 +126,7 @@ def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
     if here.startswith("papers/"):
         markdown = _with_bib(markdown, here)
+        markdown = _with_citations(markdown, here)
         markdown = _with_notes(markdown, here, config)
 
     def repl(m):

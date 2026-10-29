@@ -1,5 +1,6 @@
 """Home/status pages + MkDocs build with change detection and atomic swap."""
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -102,6 +103,16 @@ def _build(cfg, force: bool) -> dict:
         return {"built": False}
     t0 = time.time()
     out = SITE / f"build-{int(t0)}"
+    map_data = None
+    try:  # paper-map data also feeds each paper page's "Citations & related papers" section
+        from . import citations
+        from .cluster import build_data
+        citations.RELATED.unlink(missing_ok=True)
+        map_data = build_data(cfg)
+        if map_data:
+            citations.RELATED.write_text(json.dumps(citations.related_from_map(map_data), ensure_ascii=False))
+    except Exception:
+        log.exception("related-papers data failed; paper pages built without the citations section")
     mkdocs = Path(sys.executable).with_name("mkdocs")
     proc = subprocess.run([str(mkdocs), "build", "-q", "-f", str(SITE / "mkdocs.yml"), "-d", str(out)],
                           capture_output=True, text=True, cwd=SITE,
@@ -111,7 +122,7 @@ def _build(cfg, force: bool) -> dict:
         raise RuntimeError(f"mkdocs build failed: {proc.stderr[-1500:]}")
     try:  # the paper map is an extra: never let it break the site build
         from .cluster import write_page
-        write_page(cfg, out)
+        write_page(cfg, out, map_data)
     except Exception:
         log.exception("paper map failed")
     # Atomic swap: Caddy serves site/current -> build-<ts>.

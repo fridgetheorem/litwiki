@@ -186,8 +186,8 @@ def build_data(cfg) -> dict | None:
     }
 
 
-def write_page(cfg, out: Path) -> bool:
-    data = build_data(cfg)
+def write_page(cfg, out: Path, data: dict | None = None) -> bool:
+    data = data or build_data(cfg)
     if data is None:
         return False
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")

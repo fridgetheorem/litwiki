@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 import requests
 
 from . import vault
-from .common import db, log, read_page
+from .common import STATE_DIR, db, log, read_page
 
 UA = {"User-Agent": "litwiki/0.1 (personal literature wiki)"}
 RETRY_MISSING_DAYS, REFRESH_DAYS = 7, 30
@@ -116,3 +116,61 @@ def graph(cfg) -> dict[str, dict]:
     for s, lst in pairs.items():
         out[s]["coup"] = sorted(lst, key=lambda x: (-x[2], -x[1]))[:TOP_COUPLED]
     return out
+
+
+# ---------- per-paper "Citations & related papers" section (rendered into the site, not the vault) ----------
+
+RELATED = STATE_DIR / "related.json"
+
+
+def related_from_map(data: dict) -> dict:
+    """Per-paper neighbours (as page stems) from the paper-map data, for the site's paper pages."""
+    ps = data["papers"]
+    stem = lambda i: ps[i]["id"]
+    return {
+        "papers": {p["id"]: {"cb": p["cb"], "cd": p["cd"], "cites": [stem(i) for i in p["cites"]],
+                             "citedby": [stem(i) for i in p["citedby"]],
+                             "coup": [[stem(i), n] for i, n in p["coup"]], "sim": [[stem(i), sc] for i, sc in p["sim"]]}
+                   for p in ps},
+        "meta": {p["id"]: [p["t"], p["y"]] for p in ps},
+    }
+
+
+def load_related() -> dict:
+    try:
+        return json.loads(RELATED.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _link(stem: str, meta: dict) -> str:
+    title, year = meta.get(stem, [stem, None])
+    title = re.sub(r"([\[\]])", r"\\\1", str(title))
+    return f"[{title}]({stem}.md)" + (f" ({year})" if year else "")
+
+
+def section_markdown(stem: str, related: dict) -> str:
+    """Markdown for the citations block of one paper page ('' when there is nothing to show)."""
+    r = (related.get("papers") or {}).get(stem)
+    if not r:
+        return ""
+    meta = related.get("meta") or {}
+    parts = []
+    head = []
+    if r.get("cd") and r.get("cb") is not None:
+        head.append(f"Cited by **{r['cb']:,}** works (OpenAlex)")
+    elif not r.get("cd"):
+        head.append("_No citation data: OpenAlex needs a DOI or arXiv id for this paper._")
+    head.append(f"[Show on map](/clusters/#{stem})")
+    parts.append(" · ".join(head))
+    for title, items, fmt in (
+        ("Cites (in this library)", r.get("cites") or [], lambda s: _link(s, meta)),
+        ("Cited by (in this library)", r.get("citedby") or [], lambda s: _link(s, meta)),
+        ("Shared references", r.get("coup") or [], lambda x: f"{_link(x[0], meta)} — {x[1]} shared references"),
+        ("Similar text", r.get("sim") or [], lambda x: f"{_link(x[0], meta)} — {round(x[1] * 100)}% similar"),
+    ):
+        if items:
+            parts.append(f"### {title}\n\n" + "\n".join(f"- {fmt(i)}" for i in items))
+    if len(parts) == 1 and not r.get("cd"):
+        return ""  # nothing but "no data": don't add an empty section
+    return "## Citations & related papers\n\n" + "\n\n".join(parts) + "\n"
