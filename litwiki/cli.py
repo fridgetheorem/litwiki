@@ -196,6 +196,36 @@ def cmd_merge(cfg, a):
         build(cfg)
 
 
+def cmd_attach_pdf(cfg, a):
+    """Attach a PDF to a paper page (or a Zotero item without a page) and re-summarise it from the full text."""
+    from pathlib import Path
+    from .attach import AttachError, attach_pdf
+    from .llm import BudgetExceeded
+    from .notify import notify
+    from .site import build
+    src = Path(a.file)
+    try:
+        with run_lock():
+            r = attach_pdf(cfg, a.ref, src, force=a.force)
+    except AttachError as e:
+        if a.move:  # web job: nobody is watching the terminal
+            notify(f"Attach PDF to {a.ref} failed: {e}", level="warn")
+        raise SystemExit(f"attach-pdf: {e}")
+    except BudgetExceeded as e:
+        if a.move:
+            notify(f"Attach PDF to {a.ref} not done: {e}", level="warn")
+        raise SystemExit(f"attach-pdf: {e}")
+    except Exception as e:
+        if a.move:
+            notify(f"Attach PDF to {a.ref} failed: {type(e).__name__}: {e}", level="error")
+        raise
+    finally:
+        if a.move:
+            src.unlink(missing_ok=True)
+    print(f"{'created' if r['created'] else 'updated'} {r['page']} (claims verified {r['claims_verified']})")
+    build(cfg)
+
+
 def cmd_serve(cfg, a):
     from .web import serve
     serve(cfg)
@@ -328,6 +358,12 @@ def main():
     sp.add_argument("drop", nargs="+")
     sp.add_argument("--dry-run", action="store_true")
     sp.set_defaults(f=cmd_merge)
+    sp = sub.add_parser("attach-pdf", help="attach a PDF to a paper page / Zotero item and re-summarise it")
+    sp.add_argument("ref", help="paper page stem or Zotero item key")
+    sp.add_argument("file", help="path to the PDF")
+    sp.add_argument("--force", action="store_true", help="also re-summarise a page you edited by hand")
+    sp.add_argument("--move", action="store_true", help=argparse.SUPPRESS)  # web UI: delete the temp file afterwards
+    sp.set_defaults(f=cmd_attach_pdf)
     sub.add_parser("config-env", help="print shell exports derived from config.yaml (used by watchdog.sh)").set_defaults(f=cmd_config_env)
     sub.add_parser("cron", help="print the crontab lines for this install").set_defaults(f=cmd_cron)
     sub.add_parser("backfill-ingested", help="one-off: add precise ingested_at to existing paper pages").set_defaults(f=cmd_backfill_ingested)
