@@ -58,14 +58,14 @@ def update_home(cfg) -> None:
         f"LLM spend this month: **${spent(con, 'month'):.2f}** of ${cfg['budget']['monthly_usd']:.0f}",
         "", f"## Missing PDFs ({len(flagged)})", "",
         "No file in Zotero cloud storage. Pages marked *abstract-only* were summarised from the abstract; "
-        "the rest have no page yet. Attach a PDF in Zotero (and let it sync) then run `litwiki redo KEY`.", "",
+        "the rest have no page yet. Use *attach PDF* (web UI) or `litwiki attach-pdf KEY file.pdf` to re-summarise from the full text; attaching it in Zotero and running `litwiki redo KEY` also works.", "",
     ]
     for r in flagged:
         d = json.loads(r["data"])
         title = d.get("title") or d.get("filename") or r["key"]
         page = f" → [[{r['page'].removesuffix('.md')}|page]]" if r["page"] else ""
         lines.append(f"- [{title}](zotero://select/library/items/{r['key']}) `{r['key']}` — "
-                     f"{'abstract-only' if r['page'] else 'no page'}{page}")
+                     f"{'abstract-only' if r['page'] else 'no page'}{page} · [attach PDF](/app/attach/{r['key']})")
     lines += ["", "## Failed", ""]
     for r in skipped:
         d = json.loads(r["data"])

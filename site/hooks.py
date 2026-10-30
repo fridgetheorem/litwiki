@@ -85,7 +85,7 @@ def _callouts(md: str) -> str:
     return "\n".join(out)
 
 
-def _with_notes(markdown: str, here: str, config) -> str:
+def _with_notes(markdown: str, here: str, config, meta: dict | None = None) -> str:
     """Paper pages: embed notes/<stem>.md (written in the web UI or Obsidian) and link to the editor."""
     stem = posixpath.basename(here).removesuffix(".md")
     note = ""
@@ -94,8 +94,9 @@ def _with_notes(markdown: str, here: str, config) -> str:
     except OSError:
         pass
     label = "Edit notes" if note else "Add notes"
+    attach = f" [Attach PDF](/app/attach/{stem}){{ .md-button }}" if (meta or {}).get("needs_pdf") else ""
     return (markdown.rstrip() + "\n\n## Notes (web)\n\n" + (note + "\n\n" if note else "")
-            + f"[{label}](/app/notes/{stem}){{ .md-button }}\n")
+            + f"[{label}](/app/notes/{stem}){{ .md-button }}{attach}\n")
 
 
 def _with_citations(markdown: str, here: str) -> str:
@@ -127,7 +128,7 @@ def on_page_markdown(markdown: str, page, config, files):
     if here.startswith("papers/"):
         markdown = _with_bib(markdown, here)
         markdown = _with_citations(markdown, here)
-        markdown = _with_notes(markdown, here, config)
+        markdown = _with_notes(markdown, here, config, page.meta)
 
     def repl(m):
         embed, target, anchor, alias = m.groups()

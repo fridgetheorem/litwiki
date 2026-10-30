@@ -169,6 +169,17 @@ TEMPLATES = {
 {% else %}<div class="card answer">{{ html|safe }}</div>
 <p class="mut">{{ a.n_papers }} papers read · ${{ '%.2f'|format(a.cost) }}</p>{% endif %}
 <style>.answer a{color:var(--acc)}.answer h1,.answer h2,.answer h3{font-size:1.05rem;margin:1rem 0 .3rem}</style>{% endblock %}""",
+    "attach.html": """{% extends "base.html" %}{% block body %}<h1>Attach a PDF: {{ paper_title }}</h1>
+<p>{% if stem %}<a href="/papers/{{ stem }}/">View paper page</a> · {% if has_pdf %}this page has a PDF{% else %}this page has <b>no PDF</b>{% endif %}{% else %}This Zotero item has no page yet; attaching a PDF creates it{% endif %}{% if abstract_only %} and was summarised from the abstract only{% endif %}.</p>
+<form method="post" action="/app/attach/{{ ref }}" enctype="multipart/form-data" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<label for="f">PDF file (max 60 MB, must contain selectable text)</label>
+<input id="f" type="file" name="file" accept="application/pdf" required>
+{% if edited %}<p class="flash err">You edited this page by hand (status: {{ page_status }}). Re-summarising replaces the summary text.
+<label><input type="checkbox" name="force" value="1"> Overwrite my edits</label></p>{% endif %}
+<p><button class="b">Attach and re-summarise</button>
+<span class="mut">Replaces the generated summary with one written from the full text (about $0.05-0.15). Tags, collections, concepts, reviews and your notes are kept.
+It runs in the background and the page updates when the site rebuilds (about a minute).</span></p></form>
+{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -463,6 +474,46 @@ def note_post(request: Request) -> Response:
     return redirect(f"/app/notes/{stem}", "Saved. The site is rebuilding.")
 
 
+
+def attach_get(request: Request) -> Response:
+    from . import attach
+    ref = request.path_params["ref"]
+    try:
+        kind, ident = attach.resolve_target(CFG["vault"], db(), ref)
+    except attach.AttachError as e:
+        return HTMLResponse(str(e), status_code=404)
+    if kind == "page":
+        fm, _ = read_page(CFG["vault"] / vault.PAPERS / f"{ident}.md")
+        title, stem, has_pdf, abstract_only = fm.get("title", ident), ident, bool(fm.get("pdf")), fm.get("fulltext") is False
+        status = fm.get("status")
+    else:
+        d = json.loads(db().execute("SELECT data FROM items WHERE key=?", (ident,)).fetchone()["data"])
+        title, stem, has_pdf, abstract_only, status = d.get("title") or d.get("filename") or ident, "", False, False, "auto"
+    return render(request, "attach.html", title="Attach PDF", paper_title=title, stem=stem, ref=ref, has_pdf=has_pdf,
+                  abstract_only=abstract_only, edited=status not in (None, "auto"), page_status=status)
+
+
+async def attach_post(request: Request) -> Response:
+    from . import attach
+    ref, form = request.path_params["ref"], request.state.form
+    back = f"/app/attach/{ref}"
+    f = form.get("file")
+    if not getattr(f, "filename", ""):
+        return redirect(back, "Choose a PDF first.", "err")
+    try:
+        data = await f.read(attach.MAX_UPLOAD + 1)
+        await run_in_threadpool(attach.validate, data)
+        kind, _ = await run_in_threadpool(attach.resolve_target, CFG["vault"], db(), ref)
+    except attach.AttachError as e:
+        return redirect(back, str(e), "err")
+    tmp = STATE_DIR / "uploads"
+    tmp.mkdir(exist_ok=True)
+    pdf = tmp / f"attach-{secrets.token_hex(6)}.pdf"
+    pdf.write_bytes(data)
+    attach.spawn(ref, pdf, force=bool(form.get("force")))
+    return redirect(back, "Attaching and re-summarising in the background; the paper page updates when the site "
+                    "rebuilds (about a minute). If it fails you get a notification and the log has details.")
+
 # ---------- login ----------
 
 def login_get(request: Request) -> Response:
@@ -516,6 +567,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/papers", guard(papers)),
         Route("/app/notes/{stem}", guard(note_get), methods=["GET"]),
         Route("/app/notes/{stem}", guard(note_post), methods=["POST"]),
+        Route("/app/attach/{ref}", guard(attach_get), methods=["GET"]),
+        Route("/app/attach/{ref}", guard(attach_post), methods=["POST"]),
     ])
 
 

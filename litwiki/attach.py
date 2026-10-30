@@ -36,8 +36,8 @@ def validate(data: bytes) -> int:
         tmp.flush()
         try:
             pages = textract.pdf_pages(Path(tmp.name))
-        except Exception as e:
-            raise AttachError(f"Couldn't read that PDF: {e}")
+        except Exception:
+            raise AttachError("Couldn't read that PDF (it may be corrupt, encrypted or not really a PDF).")
     n = sum(len(p) for p in pages)
     if n < MIN_TEXT:
         raise AttachError("That PDF has no extractable text (scanned?). Run OCR on it first.")

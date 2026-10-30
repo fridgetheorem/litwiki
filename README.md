@@ -89,6 +89,20 @@ is searched for in the extracted text: if it is on another page the page number 
 found the claim is marked **⚠ quote not found — check**. `claims_verified: n/m` is in each page's frontmatter.
 Page numbers are *PDF* page indices (what `#page=N` opens), not printed page numbers.
 
+## Attaching a PDF to a paper
+For pages summarised from the abstract only (flagged *Missing PDFs* on the status page), for Zotero items that never got a page, or to
+replace a bad PDF:
+```
+litwiki attach-pdf PAGE-OR-ZOTERO-KEY paper.pdf [--force]
+```
+or use the **Attach PDF** button on the paper page (shown on abstract-only pages) or the *attach PDF* links on the status page
+(`/app/attach/<page or key>` in the web UI). The PDF is saved as `_pdfs/<key>.pdf`, then the page is re-summarised from the full text
+in place (about $0.05-0.15; page-cited, verified quotes). The page keeps its filename, tags, collections, concepts, reviews, aliases,
+merged Zotero keys and notes; the summary body, `pdf`, `fulltext`, `needs_pdf` and `claims_verified` are regenerated. If the Zotero item
+turns out to be a duplicate of an existing page, the PDF goes to that page. A page you edited by hand (frontmatter `status` other than
+`auto`) is refused unless `--force` / "Overwrite my edits". The PDF needs selectable text (scanned PDFs: OCR first). The web upload runs
+as a background job; failures are sent as notifications and logged in `logs/web-jobs.log`. Zotero is not modified.
+
 ## Duplicates
 The same paper can appear twice (added twice in Zotero, a bare arXiv link next to the real item, a preprint and its published
 version). Pages count as duplicates when they share a **DOI**, an **arXiv id**, or an identical title (>= 20 characters, with
