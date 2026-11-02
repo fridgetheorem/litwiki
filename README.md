@@ -148,6 +148,9 @@ Log in at `<your site>/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the stat
 
 ## Paper map (`/clusters/`)
 Interactive 2-D map of every paper (pan/zoom, hover for TL;DR, click to open), built with the site and linked from both navbars.
+Papers are shaded by main concept in translucent regions that overlap like a Venn diagram, with each concept's name above its region (drawn in front of the dots; it
+sticks to the top of the screen while any of the region is visible). Built for touch as well as mouse: pinch/spread to zoom, one finger to pan, tap a paper to focus it,
+plus +/−/⌂ buttons (and `+`/`-` keys). On narrow screens (under 900 px) the details panel starts hidden so the map gets the full height; it opens when you pick a paper, or with **Details**.
 Switch the layout between **TL;DR text similarity** (TF-IDF → SVD → t-SNE over the page sections in `config.yaml` → `clusters.sections`)
 and **concept membership**. Colour = the paper's primary (first-listed) concept; filter by concept, year or text; click legend rows to hide groups.
 Layouts are cached in `state/clusters.json` and recomputed only when a paper's text or concepts change; new layouts are aligned
