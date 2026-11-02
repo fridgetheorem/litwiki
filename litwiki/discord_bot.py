@@ -245,7 +245,8 @@ def header_text(cfg, digest: str, n: int) -> str:
     fm, _ = read_page(cfg["vault"] / digest)
     title = fm.get("title", digest)
     base = site_url(cfg)
-    links = f" · [full digest]({base}/{digest.removesuffix('.md')}/) · [Inbox]({base}/app/inbox)" if base else ""
+    links = (f" · [full digest]({base}/{digest.removesuffix('.md')}/) · [Swipe through them]({base}/app/swipe)"
+             f" · [Inbox]({base}/app/inbox)") if base else ""
     return f"📚 **{title}** — {n} new item(s){links}"
 
 

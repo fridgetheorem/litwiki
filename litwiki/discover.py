@@ -232,9 +232,9 @@ def discover(cfg) -> dict:
     con.commit()
     if picked and not bot_active():  # with the Discord bot, it posts the digest itself
         url = cfg.get("site_url", "").rstrip("/")
-        link = f"\n{url}/{path.removesuffix('.md')}/" if url else ""
+        link = f"\n{url}/{path.removesuffix('.md')}/\nSwipe through them: {url}/app/swipe" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])
-        notify(f"Daily digest: {len(picked)} new item(s). Tick the ones to ingest in Obsidian.{link}\n{top}")
+        notify(f"Daily digest: {len(picked)} new item(s). Swipe or tick the ones to ingest.{link}\n{top}")
     return {"raw": len(found), "new": len(fresh), "digest": len(picked)}
 
 
@@ -343,10 +343,10 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
     con.commit()
     if picked and not bot_active():  # with the Discord bot, it posts the digest itself
         url = cfg.get("site_url", "").rstrip("/")
-        link = f"\n{url}/{path.removesuffix('.md')}/" if url else ""
+        link = f"\n{url}/{path.removesuffix('.md')}/\nSwipe through them: {url}/app/swipe" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])
         notify(f"Search '{rv['title']}': {len(picked)} candidate(s) from {len(found)} results. "
-               f"Tick the ones to ingest in Obsidian.{link}\n{top}")
+               f"Swipe or tick the ones to ingest.{link}\n{top}")
     return {"raw": len(found), "new": len(fresh), "digest": len(picked), "digest_page": path}
 
 

@@ -135,6 +135,11 @@ Log in at `<your site>/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the stat
 - **Add**: paste DOIs / arXiv IDs / URLs (one per line) or upload PDFs, optionally attaching a review or concept. Items are queued
   (`candidates`, `digest='web'`) and ingested immediately via `litwiki web-queue` (also swept by the hourly job). Failed items get a Retry button.
   User-supplied URLs are fetched only from public addresses (no loopback / private / tailnet, checked on every redirect).
+- **Swipe** (`/app/swipe`): screen the pending digest items one card at a time, on your phone or desktop. Swipe (or drag, or press →) right to
+  ingest, left (←) to dismiss, down to skip for now, `Z` to undo, `Enter` to expand the abstract. Cards come from every pending digest, daily and
+  review-search, newest digest first and best triage score first. Each choice is saved immediately but only applied when you press **Finish**
+  (ingesting costs money, so you can undo until then; the same applies when the deck runs out). Choices you never finish are applied by the hourly job
+  once they are 10 minutes old. Ingest = ticking the item in its digest (like Obsidian), dismiss = rejected, so the Discord bot and Inbox stay in sync.
 - **Inbox**: digest items as buttons: Approve ticks `- [x]` in the digest file (same as Obsidian) and ingests now; Dismiss rejects.
 - **Notes**: `notes/<paper-stem>.md` per paper (so paper bodies stay untouched). The build embeds them in the paper page under "Notes (web)"
   and saving rebuilds the site. If the note was edited elsewhere (Obsidian) since the form loaded, the save is refused rather than overwriting.
@@ -154,6 +159,7 @@ Started by the watchdog when `DISCORD_BOT_TOKEN` is in `~/.env`. Invite it with
 - Polls `state.db` every minute; each new digest item (from digests of the last `discord.backfill_days` days) is posted as an embed with
   **Ingest** / **Dismiss** buttons (plus a PDF link). Ingest ticks the digest line and runs `web-queue`; messages update to ✅ + a link when the
   page exists, and also follow approvals/dismissals made in the web UI or Obsidian. Buttons survive restarts.
+- The digest header message links to the full digest, the swipe page and the Inbox (needs `site_url` in `config.yaml`).
 - Slash commands: `/add` (DOI / arXiv / URL or a PDF attachment, optional review/concept), `/status`, `/digest` (post now), `/here` (use this channel).
 - Picks a channel itself on joining a server (prefers #litwiki, #digest, #literature… then the system channel) and remembers it in `state.db`;
   `discord.channel_id` in `config.yaml` forces one. Pipeline alerts (budget, crashed jobs) go to the same channel when no webhook is set.
