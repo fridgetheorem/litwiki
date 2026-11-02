@@ -290,6 +290,10 @@ def cmd_hourly(cfg, a):
     from .zotero import sync
     with run_lock():
         s = sync(cfg)
+        from . import swipe
+        stale = swipe.commit(cfg, older_than_min=swipe.STALE_MINUTES)  # swipe choices you never finished
+        if stale["ingest"] or stale["dismiss"]:
+            log.info("hourly: applied unfinished swipe choices %s", stale)
         searches = run_requested_searches(cfg)
         if searches:
             log.info("hourly: review searches %s", searches)

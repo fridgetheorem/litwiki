@@ -19,10 +19,10 @@ from jinja2 import DictLoader, Environment, select_autoescape
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import ask as askmod, manual, notes, vault
+from . import ask as askmod, manual, notes, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -96,7 +96,7 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}
 label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:.6rem;align-items:flex-start}
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
-{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a>
+{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
@@ -370,6 +370,31 @@ def inbox_action(request: Request) -> Response:
     return redirect("/app/inbox", f"Dismissed {len(ids)} item(s).")
 
 
+def swipe_get(request: Request) -> Response:
+    """Full-screen swipe deck of pending digest items (the page is a static template; the deck is embedded)."""
+    data = {"deck": swipe.deck(CFG), "pending": swipe.pending()}
+    page = Path(__file__).with_name("swipe_page.html").read_text(encoding="utf-8")
+    token = json.dumps(get_session(request)["csrf"])[1:-1]
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    html = page.replace("__CSRF__", token).replace("__DATA__", blob)  # data last: titles can't inject placeholders
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+async def swipe_decide(request: Request) -> Response:
+    form = request.state.form
+    try:
+        return JSONResponse(await run_in_threadpool(swipe.decide, str(form.get("id", "")), str(form.get("action", ""))))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+
+
+async def swipe_commit(request: Request) -> Response:
+    r = await run_in_threadpool(swipe.commit, CFG)
+    if r["ingest"]:
+        spawn_queue()
+    return JSONResponse(r)
+
+
 def papers(request: Request) -> Response:
     v = CFG["vault"]
     q = request.query_params.get("q", "").lower().strip()
@@ -561,6 +586,9 @@ def create_app(cfg) -> Starlette:
         Route("/app/run", guard(run_now), methods=["POST"]),
         Route("/app/inbox", guard(inbox), methods=["GET"]),
         Route("/app/inbox", guard(inbox_action), methods=["POST"]),
+        Route("/app/swipe", guard(swipe_get), methods=["GET"]),
+        Route("/app/swipe/decide", guard(swipe_decide), methods=["POST"]),
+        Route("/app/swipe/commit", guard(swipe_commit), methods=["POST"]),
         Route("/app/ask", guard(ask_get), methods=["GET"]),
         Route("/app/ask", guard(ask_post), methods=["POST"]),
         Route("/app/ask/{aid}", guard(ask_result), methods=["GET"]),

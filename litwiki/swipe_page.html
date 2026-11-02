@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swipe · litwiki</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1d2330;--mut:#667085;--line:#d9dde5;--acc:#3f51b5;--card:#f6f7fb;--ok:#1b7f3b;--bad:#b3261e;--shadow:0 8px 28px rgba(20,25,40,.18)}
+@media(prefers-color-scheme:dark){:root{--bg:#14161c;--fg:#e4e7ee;--mut:#98a2b3;--line:#2c313c;--acc:#8c9eff;--card:#1c1f27;--ok:#5fd07f;--bad:#ff8a80;--shadow:0 8px 28px rgba(0,0,0,.5)}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overscroll-behavior:none}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+header{display:flex;align-items:center;gap:.8rem;padding:.55rem 1rem;border-bottom:1px solid var(--line);background:var(--card);flex:none}
+header a{color:var(--acc);text-decoration:none}
+header .sp{flex:1}
+#counts{color:var(--mut);font-size:.88rem}
+button{font:inherit;color:inherit;cursor:pointer}
+#finish{background:var(--acc);color:var(--bg);border:0;border-radius:999px;padding:.35rem .95rem;font-weight:600}
+#finish[disabled]{opacity:.4;cursor:default}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:.8rem;position:relative}
+#stack{position:relative;width:100%;max-width:520px;height:min(100%,640px)}
+.card{position:absolute;inset:0;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:1.1rem 1.2rem 1rem;
+  display:flex;flex-direction:column;gap:.45rem;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none;will-change:transform;transform-origin:50% 90%}
+.card.top{cursor:grab}.card.top:active{cursor:grabbing}
+.card.l1{transform:translateY(10px) scale(.96);opacity:.85}.card.l2{transform:translateY(20px) scale(.92);opacity:.6}
+.card.anim{transition:transform .22s ease-out,opacity .22s ease-out}
+.meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.8rem}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:.1rem .6rem;color:var(--mut)}
+.score{margin-left:auto;font-weight:700;color:var(--acc);font-size:1rem}
+h2{font-size:1.18rem;line-height:1.28;margin:.2rem 0 0}
+.by{font-size:.92rem}.venue{font-size:.85rem;color:var(--mut)}
+.why{margin:.3rem 0 0;padding:.5rem .7rem;border-left:3px solid var(--acc);background:var(--bg);border-radius:0 8px 8px 0;font-size:.95rem}
+.abs{margin:.2rem 0 0;font-size:.9rem;color:var(--fg);opacity:.9;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:7;overflow:hidden;white-space:pre-line}
+.card.open{overflow-y:auto;touch-action:pan-y}.card.open .abs{-webkit-line-clamp:unset;display:block}
+.more{align-self:flex-start;background:none;border:0;color:var(--acc);padding:0;font-size:.88rem}
+.links{margin-top:auto;display:flex;gap:1rem;flex-wrap:wrap;font-size:.9rem;padding-top:.5rem}
+.links a{color:var(--acc)}.links .nopdf{color:var(--mut)}
+.stamp{position:absolute;top:1.1rem;font-weight:800;font-size:1.5rem;letter-spacing:.06em;border:3px solid;border-radius:10px;padding:.1rem .6rem;opacity:0;pointer-events:none}
+.stamp.ing{right:1rem;color:var(--ok);transform:rotate(10deg)}.stamp.dis{left:1rem;color:var(--bad);transform:rotate(-10deg)}
+#bar{flex:none;display:flex;justify-content:center;gap:1.1rem;padding:.7rem 1rem calc(.9rem + env(safe-area-inset-bottom))}
+#bar button{width:3.6rem;height:3.6rem;border-radius:50%;border:2px solid var(--line);background:var(--card);font-size:1.5rem;line-height:1;display:flex;align-items:center;justify-content:center}
+#bar button.no{border-color:var(--bad);color:var(--bad)}#bar button.yes{border-color:var(--ok);color:var(--ok)}
+#bar button.sm{width:2.9rem;height:2.9rem;font-size:1.15rem;align-self:center;color:var(--mut)}
+#bar button[disabled]{opacity:.35;cursor:default}
+.hint{position:absolute;bottom:.2rem;left:0;right:0;text-align:center;font-size:.75rem;color:var(--mut)}
+@media(hover:none){.hint{display:none}}
+#done{display:none;text-align:center;max-width:30rem;padding:1rem}
+#done h1{font-size:1.4rem}#done p{color:var(--mut)}
+#done .row a,#done .row button{display:inline-block;margin:.3rem;background:var(--acc);color:var(--bg);border:0;border-radius:8px;padding:.5rem 1rem;text-decoration:none;font-weight:600}
+#done .row .sec{background:none;color:var(--acc);border:1px solid var(--acc)}
+#toast{position:fixed;left:50%;bottom:6.2rem;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:.5rem 1rem;border-radius:8px;font-size:.9rem;display:none;max-width:90vw;z-index:9}
+@media(prefers-reduced-motion:reduce){.card.anim{transition:none}}
+</style></head><body>
+<header><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox</a><span class="sp"></span><span id="counts"></span>
+<button id="finish" disabled>Finish</button></header>
+<main><div id="stack" aria-live="polite"></div>
+<div id="done"></div><div class="hint">← dismiss · → ingest · ↓ skip · Z undo · Enter expand</div></main>
+<div id="bar">
+<button class="no" id="bNo" aria-label="Dismiss">✖</button>
+<button class="sm" id="bSkip" aria-label="Skip for now">⏭</button>
+<button class="sm" id="bUndo" aria-label="Undo" disabled>↩</button>
+<button class="yes" id="bYes" aria-label="Ingest">✔</button></div>
+<div id="toast" role="status"></div>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(()=>{
+const D=JSON.parse(document.getElementById("data").textContent), CSRF="__CSRF__";
+let deck=D.deck.slice(), pend={ingest:D.pending.ingest||0,dismiss:D.pending.dismiss||0}, hist=[], busy=false, finished=false;
+const $=id=>document.getElementById(id), stack=$("stack"), reduced=matchMedia("(prefers-reduced-motion:reduce)").matches;
+const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!==undefined)e.textContent=txt;return e};
+
+function toast(msg){const t=$("toast");t.textContent=msg;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",4500)}
+async function post(path,params){
+  const body=new URLSearchParams({_csrf:CSRF,...params});
+  const r=await fetch(path,{method:"POST",body,credentials:"same-origin"});
+  if(r.redirected&&r.url.includes("/app/login")) throw new Error("Session expired: log in again, then reload this page.");
+  if(!r.ok){let m;try{m=(await r.json()).error}catch(_){}
+    const e=new Error(m||(r.status===403?"Session expired: reload this page.":"Server error ("+r.status+")"));e.status=r.status;throw e}
+  return r.json();
+}
+
+function makeCard(it){
+  const c=el("div","card");
+  const st1=el("div","stamp ing","INGEST"), st2=el("div","stamp dis","DISMISS");st1.setAttribute("aria-hidden","true");st2.setAttribute("aria-hidden","true");
+  const meta=el("div","meta");meta.append(el("span","chip",it.digest));if(it.score!=="")meta.append(el("span","score",it.score+"/10"));
+  c.append(st1,st2,meta,el("h2","",it.title));
+  if(it.authors)c.append(el("div","by",it.authors));
+  const v=[it.venue,it.date].filter(Boolean).join(" · ");if(v)c.append(el("div","venue",v));
+  if(it.why)c.append(el("div","why",it.why));
+  if(it.abstract){c.append(el("div","abs",it.abstract));const m=el("button","more","Show more");
+    m.addEventListener("click",()=>{const o=c.classList.toggle("open");m.textContent=o?"Show less":"Show more"});c.append(m)}
+  const l=el("div","links");
+  if(it.url){const a=el("a","","Abstract");a.href=it.url;a.target="_blank";a.rel="noreferrer";l.append(a)}
+  if(it.pdf_url){const a=el("a","","PDF");a.href=it.pdf_url;a.target="_blank";a.rel="noreferrer";l.append(a)}
+  else l.append(el("span","nopdf","no open-access PDF · abstract-only summary"));
+  c.append(l);return c;
+}
+
+function updateUI(){
+  const n=pend.ingest+pend.dismiss;
+  $("counts").textContent=deck.length+" left · "+pend.ingest+" ingest · "+pend.dismiss+" dismiss";
+  const f=$("finish");f.disabled=finished||n===0;f.textContent=n?"Finish ("+n+")":"Finish";
+  $("bUndo").disabled=finished||!hist.length||busy;
+  for(const id of ["bNo","bSkip","bYes"])$(id).disabled=finished||!deck.length||busy;
+}
+
+function render(){
+  stack.replaceChildren();
+  if(!deck.length||finished){showDone();updateUI();return}
+  $("done").style.display="none";stack.style.display="";
+  deck.slice(0,3).reverse().forEach((it,i,arr)=>{
+    const depth=arr.length-1-i, c=makeCard(it);c.classList.add(depth===0?"top":"l"+depth);
+    if(depth===0)attachDrag(c);stack.append(c)});
+  updateUI();
+}
+
+function showDone(){
+  stack.style.display="none";const d=$("done");d.style.display="block";d.replaceChildren();
+  const n=pend.ingest+pend.dismiss;
+  if(finished){
+    d.append(el("h1","","Done"),el("p","",(d.dataset.msg||"")));
+  }else if(n){
+    d.append(el("h1","","All screened"),el("p","","Apply your choices: "+pend.ingest+" to ingest, "+pend.dismiss+" to dismiss."));
+    const r=el("div","row"),b=el("button","","Finish");b.addEventListener("click",finish);r.append(b);d.append(r);return;
+  }else{
+    d.append(el("h1","","Nothing waiting"),el("p","","No undecided digest items right now."));
+  }
+  const r=el("div","row"),a=el("a","sec","Inbox");a.href="/app/inbox";const h=el("a","sec","Wiki");h.href="/";r.append(a,h);d.append(r);
+}
+
+async function decide(action,viaDrag){
+  if(busy||!deck.length)return;
+  const it=deck[0];
+  if(action==="skip"){deck.push(deck.shift());hist.push({it,action});render();return}
+  busy=true;updateUI();
+  try{
+    const r=await post("/app/swipe/decide",{id:it.id,action});
+    pend=r;deck.shift();hist.push({it,action});
+  }catch(e){
+    if(e.status===409)deck.shift();  // handled elsewhere (Discord, Inbox, Obsidian): drop it
+    toast(e.message);busy=false;render();return}
+  busy=false;render();
+}
+
+function fling(action){
+  if(busy||!deck.length)return;
+  const top=stack.querySelector(".card.top");
+  if(!top||reduced||action==="skip"){decide(action);return}
+  const dx=(action==="ingest"?1:-1)*innerWidth*1.1;
+  top.classList.add("anim");top.style.transform="translate("+dx+"px,-20px) rotate("+dx/18+"deg)";top.style.opacity="0";
+  setTimeout(()=>decide(action),200);
+}
+
+async function undo(){
+  if(busy||!hist.length||finished)return;
+  const h=hist[hist.length-1];
+  if(h.action==="skip"){hist.pop();deck.pop();deck.unshift(h.it);render();return}
+  busy=true;updateUI();
+  try{const r=await post("/app/swipe/decide",{id:h.it.id,action:"undo"});pend=r;hist.pop();deck.unshift(h.it)}
+  catch(e){toast(e.message)}
+  busy=false;render();
+}
+
+async function finish(){
+  if(busy||finished)return;busy=true;updateUI();
+  try{
+    const r=await post("/app/swipe/commit",{});
+    finished=true;
+    $("done").dataset.msg=(r.ingest?"Ingesting "+r.ingest+" paper(s): they appear on the site in a few minutes. ":"")
+      +(r.dismiss?"Dismissed "+r.dismiss+". ":"")+(r.skipped?r.skipped+" could not be ingested (already handled elsewhere). ":"");
+    pend={ingest:0,dismiss:0};hist=[];
+  }catch(e){toast(e.message)}
+  busy=false;render();
+}
+
+function attachDrag(c){
+  let id=null,x0=0,y0=0,t0=0,dx=0,live=false;
+  const s1=c.querySelector(".ing"),s2=c.querySelector(".dis");
+  c.addEventListener("pointerdown",e=>{
+    if(busy||e.target.closest("a,button")||(e.pointerType==="mouse"&&e.button!==0))return;
+    id=e.pointerId;x0=e.clientX;y0=e.clientY;t0=e.timeStamp;dx=0;live=false;
+  });
+  c.addEventListener("pointermove",e=>{
+    if(e.pointerId!==id)return;
+    const mx=e.clientX-x0,my=e.clientY-y0;
+    if(!live){if(Math.abs(mx)<8)return;if(Math.abs(my)>Math.abs(mx)*1.2){id=null;return}live=true;c.setPointerCapture(id);c.classList.remove("anim")}
+    dx=mx;c.style.transform="translate("+dx+"px,"+(my*.25)+"px) rotate("+dx/18+"deg)";
+    const a=Math.min(Math.abs(dx)/110,1);(dx>0?s1:s2).style.opacity=a;(dx>0?s2:s1).style.opacity=0;
+  });
+  const end=e=>{
+    if(e.pointerId!==id)return;id=null;if(!live)return;live=false;
+    const v=Math.abs(dx)/Math.max(e.timeStamp-t0,1);
+    if(e.type!=="pointercancel"&&(Math.abs(dx)>110||(v>.6&&Math.abs(dx)>40))){
+      const action=dx>0?"ingest":"dismiss";const out=(dx>0?1:-1)*innerWidth*1.1;
+      c.classList.add("anim");c.style.transform="translate("+out+"px,0) rotate("+out/18+"deg)";c.style.opacity="0";
+      setTimeout(()=>decide(action,true),reduced?0:200);
+    }else{c.classList.add("anim");c.style.transform="";s1.style.opacity=s2.style.opacity=0}
+  };
+  c.addEventListener("pointerup",end);c.addEventListener("pointercancel",end);
+}
+
+$("bNo").addEventListener("click",()=>fling("dismiss"));
+$("bYes").addEventListener("click",()=>fling("ingest"));
+$("bSkip").addEventListener("click",()=>decide("skip"));
+$("bUndo").addEventListener("click",undo);
+$("finish").addEventListener("click",finish);
+addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey||/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;
+  const k=e.key;
+  if(k==="ArrowRight")fling("ingest");else if(k==="ArrowLeft")fling("dismiss");
+  else if(k==="ArrowDown"||k===" "){e.preventDefault();decide("skip")}
+  else if(k==="z"||k==="Backspace")undo();
+  else if(k==="Enter"||k==="e"){const m=stack.querySelector(".card.top .more");if(m)m.click()}
+});
+render();
+})();
+</script></body></html>
