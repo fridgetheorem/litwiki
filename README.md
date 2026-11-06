@@ -103,6 +103,16 @@ turns out to be a duplicate of an existing page, the PDF goes to that page. A pa
 `auto`) is refused unless `--force` / "Overwrite my edits". The PDF needs selectable text (scanned PDFs: OCR first). The web upload runs
 as a background job; failures are sent as notifications and logged in `logs/web-jobs.log`. Zotero is not modified.
 
+## Projects (grow a literature review over time)
+A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work. Create one with `litwiki review-new "Title"`, write its question
+and scope, then open **Projects** in the web UI (`/app/projects`) or press *Screen papers for this project* on its wiki page.
+`/app/project/<slug>` is a grid of cards for bulk decisions (visually distinct from the swipe view): **In library** (papers you already have that are not
+linked yet), **New** (candidates from the project's searches, see *Literature reviews*) and **Linked**. Tap cards to select them, then **Link to project**
+(free), **Ingest new** (summarises them, about $0.05-0.15 each, and they join the project), **Dismiss new** or **Unlink**. **Analyze** runs a cheap Haiku pass
+(about $0.002 per 12 papers, so a whole library costs a few cents) that gives each card a 0-10 *fit* score and 2-3 bullets on how it relates to the project;
+results are cached, library papers are analysed most-keyword-overlap first, 120 at a time. Membership is the `reviews:` list in a paper's frontmatter (so
+`tag:#review/<slug>` works in Obsidian), and the review page keeps an auto-managed *Linked papers* list.
+
 ## Duplicates
 The same paper can appear twice (added twice in Zotero, a bare arXiv link next to the real item, a preprint and its published
 version). Pages count as duplicates when they share a **DOI**, an **arXiv id**, or an identical title (>= 20 characters, with

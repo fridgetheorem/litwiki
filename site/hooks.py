@@ -125,6 +125,9 @@ def _with_bib(markdown: str, here: str) -> str:
 
 def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
+    if here.startswith("reviews/") and posixpath.basename(here) != "index.md":
+        slug = posixpath.basename(here).removesuffix(".md")
+        markdown = markdown.rstrip() + f"\n\n[Screen papers for this project](/app/project/{slug}){{ .md-button }}\n"
     if here.startswith("papers/"):
         markdown = _with_bib(markdown, here)
         markdown = _with_citations(markdown, here)
