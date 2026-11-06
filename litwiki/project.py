@@ -214,6 +214,15 @@ def link(cfg, slug: str, stems: list[str], unlink: bool = False) -> int:
     return n
 
 
+def set_daily(cfg, slug: str, on: bool) -> None:
+    """Turn the project's daily digest on or off (frontmatter `daily`)."""
+    rv = get(cfg, slug)
+    fm, body = read_page(rv["path"])
+    if fm.get("daily") is not on:
+        fm["daily"] = on
+        write_page(rv["path"], fm, body)
+
+
 def summary(cfg) -> list[dict]:
     """One row per project for the projects list page."""
     v = cfg["vault"]
@@ -228,4 +237,5 @@ def summary(cfg) -> list[dict]:
         if s:
             waiting[s] = waiting.get(s, 0) + 1
     return [{"slug": s, "title": rv["title"], "linked": counts.get(s, 0), "waiting": waiting.get(s, 0),
-             "terms": len(rv.get("search_terms") or [])} for s, rv in vault.reviews(v).items()]
+             "terms": len(rv.get("search_terms") or []), "daily": rv.get("daily") is True,
+             "status": str(rv.get("status", "active"))} for s, rv in vault.reviews(v).items()]

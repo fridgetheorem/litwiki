@@ -185,7 +185,10 @@ It runs in the background and the page updates when the site rebuilds (about a m
 {% if not projects %}<p class="mut">No projects yet.</p>{% endif %}
 {% for p in projects %}<div class="card"><b><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></b>
 <div class="mut">{{ p.linked }} linked paper(s) · {{ p.waiting }} new candidate(s) waiting · {{ p.terms }} search term(s)</div>
-<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a></div></div>{% endfor %}{% endblock %}""",
+<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a></div>
+<form method="post" action="/app/project/{{ p.slug }}/daily" style="margin-top:.4rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b {{ 'sec' if p.daily else '' }}">{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button>
+<span class="mut">{% if p.status != 'active' %}archived projects are skipped{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span></form></div>{% endfor %}{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -477,6 +480,15 @@ async def project_act(request: Request) -> Response:
     return JSONResponse({"error": f"Unknown action {action!r}."}, status_code=400)
 
 
+async def project_daily(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    on = str(request.state.form.get("on", "")) == "1"
+    await run_in_threadpool(project.set_daily, CFG, slug, on)
+    return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
+
+
 def papers(request: Request) -> Response:
     v = CFG["vault"]
     q = request.query_params.get("q", "").lower().strip()
@@ -674,6 +686,7 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/status", guard(project_status), methods=["GET"]),
         Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),
         Route("/app/project/{slug}/act", guard(project_act), methods=["POST"]),
+        Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
         Route("/app/swipe", guard(swipe_get), methods=["GET"]),
         Route("/app/swipe/decide", guard(swipe_decide), methods=["POST"]),
         Route("/app/swipe/commit", guard(swipe_commit), methods=["POST"]),

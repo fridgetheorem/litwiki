@@ -239,12 +239,13 @@ def discover(cfg) -> dict:
     return {"raw": len(found), "new": len(fresh), "digest": len(picked)}
 
 
-def write_digest(cfg, picked: list[dict], review: dict | None = None) -> str:
+def write_digest(cfg, picked: list[dict], review: dict | None = None, prefix: str = "search") -> str:
     v, proxy = cfg["vault"], cfg["discovery"].get("proxy_prefix", "")
     titles = {k: fm["title"] for k, fm in vault.concepts(v).items()}
     if review:
-        rel = f"{vault.DIGESTS}/search-{review['path'].stem}-{date.today().isoformat()}.md"
-        head = f"# Search: [[reviews/{review['path'].stem}|{review['title']}]] — {date.today():%d %b %Y}"
+        rel = f"{vault.DIGESTS}/{prefix}-{review['path'].stem}-{date.today().isoformat()}.md"
+        head = (f"# {'Project digest' if prefix == 'project' else 'Search'}: "
+                f"[[reviews/{review['path'].stem}|{review['title']}]] — {date.today():%d %b %Y}")
     else:
         rel = f"{vault.DIGESTS}/{date.today().isoformat()}.md"
         head = f"# Literature digest — {date.today():%d %b %Y}"
@@ -276,16 +277,20 @@ def write_digest(cfg, picked: list[dict], review: dict | None = None) -> str:
                      f"    {au} — *{c['venue']}*, {c['date']}  ",
                      f"    {c.get('why', '')}  ",
                      f"    {' · '.join(links)}", ""]
-    title = f"Search {review['path'].stem} {date.today().isoformat()}" if review else f"Digest {date.today().isoformat()}"
+    title = f"{prefix.capitalize()} {review['path'].stem} {date.today().isoformat()}" if review else f"Digest {date.today().isoformat()}"
     write_page(v / rel, {"title": title, "type": "digest", "items": len(picked)}, "\n".join(body))
     return rel
 
 
 # ---------- on-demand review search ----------
 
-def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: list[str] | None = None) -> dict:
-    """Back-catalog search for one literature review, scored against its question/scope.
-    Writes digests/search-<slug>-<date>.md; ticked items are ingested and tagged #review/<slug>."""
+def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: list[str] | None = None,
+                  recent_days: int | None = None) -> dict:
+    """Search for one literature review/project, scored against its question/scope.
+    Default: back-catalog search -> digests/search-<slug>-<date>.md. With `recent_days` (the project's daily run):
+    only the last few days, skipping candidates already seen for this project or already ingested/dismissed,
+    -> digests/project-<slug>-<date>.md (no page when nothing qualifies). Ticked items are ingested and tagged
+    #review/<slug>."""
     v, dc = cfg["vault"], cfg["discovery"]
     rv = vault.reviews(v).get(slug)
     if not rv:
@@ -294,7 +299,12 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
     if not terms:
         raise SystemExit(f"reviews/{slug}.md has no search_terms")
     since = date(int(since_year or rv.get("since_year") or date.today().year - 5), 1, 1)
+    since_oa = since
     n = int(rv.get("max_per_term") or 100)
+    if recent_days:  # same windows as the global daily discovery: arXiv is current, journals are indexed with a lag
+        since = date.today() - timedelta(days=int(recent_days))
+        since_oa = date.today() - timedelta(days=int(dc["openalex_lookback_days"]))
+        n = int(dc.get("project_daily_per_term", 25))
     cats = rv.get("arxiv_categories") or []
     mailto = dc.get("openalex_mailto", "")
 
@@ -304,12 +314,17 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
         known_titles.add(title_key(json.loads(r["data"]).get("title", "")))
     for r in con.execute("SELECT title FROM candidates WHERE status='ingested'"):
         known_titles.add(title_key(r["title"]))
+    seen_ids = set()
+    if recent_days:
+        for r in con.execute("SELECT id, status, data FROM candidates"):
+            if r["status"] in ("ingested", "rejected") or json.loads(r["data"]).get("review") == slug:
+                seen_ids.add(r["id"])
 
     found: dict[str, dict] = {}
     errors = []
     for t in terms:
         for name, fn in (("arxiv", lambda: search_arxiv([t], cats, since, n, by_relevance=True)),
-                         ("openalex", lambda: search_openalex([t], since, n, mailto, by_relevance=True))):
+                         ("openalex", lambda: search_openalex([t], since_oa, n, mailto, by_relevance=True))):
             try:
                 for c in fn():
                     found.setdefault(c["id"], c)
@@ -317,7 +332,8 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
                 errors.append(f"{name}/{t}: {e}")
                 log.warning("%s search failed for %r: %s", name, t, e)
             time.sleep(3.1 if name == "arxiv" else 0.2)
-    fresh = [c for c in found.values() if c["title"] and title_key(c["title"]) not in known_titles]
+    fresh = [c for c in found.values()
+             if c["title"] and title_key(c["title"]) not in known_titles and c["id"] not in seen_ids]
     log.info("review search %s: %d raw, %d not already in the library", slug, len(found), len(fresh))
     if len(errors) > len(terms):
         notify(f"Review search '{slug}': {len(errors)} source queries failed (e.g. {errors[0][:200]})", level="warn")
@@ -331,7 +347,7 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
         c["review"] = slug
     picked = sorted((c for c in fresh if c.get("score", 0) >= dc["min_score"]),
                     key=lambda c: -c["score"])[:int(dc.get("review_digest_max", 40))]
-    path = write_digest(cfg, picked, review=rv)
+    path = write_digest(cfg, picked, review=rv, prefix="project") if picked or not recent_days else None
     picked_ids = {c["id"] for c in picked}
     for c in fresh:
         con.execute(
@@ -346,9 +362,25 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
         url = cfg.get("site_url", "").rstrip("/")
         link = f"\n{url}/{path.removesuffix('.md')}/\nSwipe through them: {url}/app/swipe" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])
-        notify(f"Search '{rv['title']}': {len(picked)} candidate(s) from {len(found)} results. "
+        notify(f"{'Daily project digest' if recent_days else 'Search'} '{rv['title']}': {len(picked)} candidate(s) from {len(found)} results. "
                f"Swipe or tick the ones to ingest.{link}\n{top}")
     return {"raw": len(found), "new": len(fresh), "digest": len(picked), "digest_page": path}
+
+
+def run_daily_projects(cfg) -> dict:
+    """The daily run for every active project with `daily: true`: a short-window search + digest per project."""
+    out = {}
+    for slug, rv in vault.reviews(cfg["vault"]).items():
+        if rv.get("daily") is not True or str(rv.get("status", "active")) != "active" or not rv.get("search_terms"):
+            continue
+        try:
+            out[slug] = search_review(cfg, slug, recent_days=cfg["discovery"]["lookback_days"])
+        except SystemExit as e:
+            notify(f"Project '{slug}': daily search not run: {e}", level="warn")
+        except Exception:
+            log.exception("daily project search failed for %s", slug)
+            notify(f"Project '{slug}': daily search failed, see logs/daily.log", level="error")
+    return out
 
 
 def run_requested_searches(cfg) -> dict:

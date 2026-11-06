@@ -27,8 +27,8 @@ def _con(con=None):
 
 def digest_label(digest: str) -> str:
     name = digest.removeprefix("digests/").removesuffix(".md")
-    m = re.fullmatch(r"search-(.+)-(\d{4}-\d{2}-\d{2})", name)
-    return f"Search · {m.group(1).replace('-', ' ')} · {m.group(2)}" if m else f"Daily · {name}"
+    m = re.fullmatch(r"(search|project)-(.+)-(\d{4}-\d{2}-\d{2})", name)
+    return f"{m.group(1).capitalize()} · {m.group(2).replace('-', ' ')} · {m.group(3)}" if m else f"Daily · {name}"
 
 
 def deck(cfg, con=None) -> list[dict]:

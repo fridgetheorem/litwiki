@@ -44,6 +44,8 @@ def create_review(vault: Path, title: str) -> str:
         "max_per_term": 100,         # candidates fetched per term per source
         "exclude": "",               # topics / paper types to score down, in plain words
         "run": False,                # set to true in Obsidian to run a search at the next hourly job
+        "daily": False,              # true = also search this project every day (recent papers only) and write a digest
+        "status": "active",          # active | archived (archived projects are skipped by the daily run)
         "created": date.today().isoformat(),
     }
     body = (f"# {title}\n\n## Research question\n\n_What is this review trying to find out?_\n\n"
