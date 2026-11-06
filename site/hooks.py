@@ -127,7 +127,14 @@ def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
     if here.startswith("reviews/") and posixpath.basename(here) != "index.md":
         slug = posixpath.basename(here).removesuffix(".md")
-        markdown = markdown.rstrip() + f"\n\n[Screen papers for this project](/app/project/{slug}){{ .md-button }}\n"
+        note = ""
+        try:
+            note = FM.sub("", open(os.path.join(config["docs_dir"], "notes", "projects", slug + ".md"), encoding="utf-8").read(), 1).strip()
+        except OSError:
+            pass
+        markdown = (markdown.rstrip() + "\n\n## Notes\n\n" + (note + "\n\n" if note else "")
+                    + f"[{'Edit notes' if note else 'Add notes'}](/app/project/{slug}/notes){{ .md-button }} "
+                    + f"[Screen papers for this project](/app/project/{slug}){{ .md-button }}\n")
     if here.startswith("papers/"):
         markdown = _with_bib(markdown, here)
         markdown = _with_citations(markdown, here)

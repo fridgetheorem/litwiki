@@ -110,7 +110,20 @@ and scope, then open **Projects** in the web UI (`/app/projects`) or press *Scre
 linked yet), **New** (candidates from the project's searches, see *Literature reviews*) and **Linked**. Tap cards to select them, then **Link to project**
 (free), **Ingest new** (summarises them, about $0.05-0.15 each, and they join the project), **Dismiss new** or **Unlink**. **Analyze** runs a cheap Haiku pass
 (about $0.002 per 12 papers, so a whole library costs a few cents) that gives each card a 0-10 *fit* score and 2-3 bullets on how it relates to the project;
-results are cached, library papers are analysed most-keyword-overlap first, 120 at a time. Membership is the `reviews:` list in a paper's frontmatter (so
+results are cached, library papers are analysed most-keyword-overlap first, 120 at a time.
+
+**Daily project digests.** Set `daily: true` on a project's page (or press *Turn on daily digest* on `/app/projects`; `status: archived` pauses it). After the
+global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
+window), scores them with the triage model against the project's question and scope, and writes `digests/project-<slug>-<date>.md` (nothing is written when
+nothing qualifies). Papers already seen for the project, ingested, or dismissed are skipped. The picks appear in the swipe queue, Inbox, Discord and the project's
+*New* tab; ingesting one links it to the project. `litwiki search <slug> --recent` runs the same thing now. Cost: a few triage calls (a fraction of a cent each)
+per project per day; per-term result cap: `discovery.project_daily_per_term` (default 25).
+
+**Project notes (whiteboard).** `/app/project/<slug>/notes` is a free-form markdown scratchpad per project, stored in `notes/projects/<slug>.md` (so Obsidian can edit
+it too). New notes start with *Ideas / Questions / Outline / To do* headings; the box above the editor is a quick-add that appends a dated bullet; the side panel lists
+the project's linked papers and inserts a `[[papers/...|Title]]` link at the cursor when you click one. It autosaves a few seconds after you stop typing (no site
+rebuild), **Save & publish** (or Ctrl/⌘+S) also rebuilds the wiki, where the notes appear on the project's page under *Notes*. If the file changed elsewhere (Obsidian)
+since you opened it, a save is refused and you choose *Keep mine* or *Use theirs*, so nothing is silently overwritten. Membership is the `reviews:` list in a paper's frontmatter (so
 `tag:#review/<slug>` works in Obsidian), and the review page keeps an auto-managed *Linked papers* list.
 
 ## Duplicates

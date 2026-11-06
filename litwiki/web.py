@@ -489,6 +489,35 @@ async def project_daily(request: Request) -> Response:
     return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
 
 
+def project_notes_get(request: Request) -> Response:
+    """The project's whiteboard: a markdown scratchpad with quick capture and a picker for linked papers."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    text, mtime = project.read_notes(CFG, slug)
+    data = {"slug": slug, "title": rv["title"], "page_url": f"/reviews/{slug}/", "text": text, "mtime": mtime,
+            "skeleton": project.SKELETON, "papers": project.linked_papers(CFG, slug)}
+    page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
+    token = json.dumps(get_session(request)["csrf"])[1:-1]
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob), headers={"Cache-Control": "no-store"})
+
+
+async def project_notes_post(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    form = request.state.form
+    try:
+        mtime = await run_in_threadpool(project.save_notes, CFG, slug, str(form.get("text", "")), int(form.get("mtime") or 0))
+    except notes.Conflict:
+        text, cur = await run_in_threadpool(project.read_notes, CFG, slug)
+        return JSONResponse({"error": "changed elsewhere", "text": text, "mtime": cur}, status_code=409)
+    if form.get("publish"):
+        request_build()
+    return JSONResponse({"mtime": mtime})
+
+
 def papers(request: Request) -> Response:
     v = CFG["vault"]
     q = request.query_params.get("q", "").lower().strip()
@@ -687,6 +716,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),
         Route("/app/project/{slug}/act", guard(project_act), methods=["POST"]),
         Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
+        Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
+        Route("/app/project/{slug}/notes", guard(project_notes_post), methods=["POST"]),
         Route("/app/swipe", guard(swipe_get), methods=["GET"]),
         Route("/app/swipe/decide", guard(swipe_decide), methods=["POST"]),
         Route("/app/swipe/commit", guard(swipe_commit), methods=["POST"]),

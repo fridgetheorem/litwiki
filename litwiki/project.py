@@ -8,9 +8,11 @@ page costs nothing."""
 import json
 import re
 import threading
+from datetime import datetime, timezone
 
 from . import vault
 from .common import db, log, read_page, replace_block, write_page
+from .notes import Conflict
 
 STEM = re.compile(r"^[\w.\-]+$")
 BATCH = 12
@@ -212,6 +214,55 @@ def link(cfg, slug: str, stems: list[str], unlink: bool = False) -> int:
     if n:
         sync_page(cfg, slug)
     return n
+
+
+NOTES_DIR = "notes/projects"
+SKELETON = "## Ideas\n\n\n## Questions\n\n\n## Outline\n\n\n## To do\n\n"
+
+
+def notes_path(cfg, slug: str):
+    get(cfg, slug)  # validates the slug against the existing review pages
+    return cfg["vault"] / NOTES_DIR / f"{slug}.md"
+
+
+def read_notes(cfg, slug: str) -> tuple[str, int]:
+    """(text, mtime_ns) of the project's whiteboard notes; ('', 0) when there are none yet."""
+    p = notes_path(cfg, slug)
+    if not p.exists():
+        return "", 0
+    _, body = read_page(p)
+    return body.strip("\n"), p.stat().st_mtime_ns
+
+
+def save_notes(cfg, slug: str, text: str, expected_mtime: int) -> int:
+    """Write the notes; raises notes.Conflict if the file changed (e.g. in Obsidian) since it was loaded.
+    Empty text deletes the file. Returns the new mtime."""
+    p = notes_path(cfg, slug)
+    current = p.stat().st_mtime_ns if p.exists() else 0
+    if current != expected_mtime:
+        raise Conflict()
+    text = text.replace("\r\n", "\n").strip("\n")
+    if not text.strip():
+        p.unlink(missing_ok=True)
+        return 0
+    fm = read_page(p)[0] if p.exists() else {}
+    fm.update(title=f"Notes: {get(cfg, slug)['title']}", project=f"reviews/{slug}", type="note",
+              updated=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    write_page(p, fm, text + "\n")
+    return p.stat().st_mtime_ns
+
+
+def linked_papers(cfg, slug: str) -> list[dict]:
+    """Papers linked to the project (stem, title, year, authors), newest first: the notes page's link picker."""
+    out = []
+    for p in sorted((cfg["vault"] / vault.PAPERS).glob("*.md")):
+        fm, _ = read_page(p)
+        if slug in (fm.get("reviews") or []) and fm.get("title"):
+            au = [str(a) for a in (fm.get("authors") or []) if not str(a).strip().isdigit()]
+            out.append({"stem": p.stem, "title": str(fm["title"]), "year": fm.get("year") or "",
+                        "authors": (au[0].split()[-1] + (" et al." if len(au) > 1 else "")) if au else ""})
+    out.sort(key=lambda r: str(r["year"]), reverse=True)
+    return out
 
 
 def set_daily(cfg, slug: str, on: bool) -> None:
