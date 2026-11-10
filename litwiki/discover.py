@@ -70,7 +70,8 @@ def search_openalex(terms, since: date, n: int, mailto: str, by_relevance: bool 
         # OpenAlex rejects some punctuation (e.g. "L*"); keep words only.
         # Daily search: exact phrases. Review search: plain words, which OpenAlex ranks by relevance.
         "search": " OR ".join((c if by_relevance else f'"{c}"') for t in terms if (c := " ".join(re.findall(r"[\w-]+", t)))),
-        "filter": f"from_publication_date:{since.isoformat()},type:article|proceedings-article|review",
+        # OpenAlex retired the Crossref label 'proceedings-article'; its work type is 'conference-paper'.
+        "filter": f"from_publication_date:{since.isoformat()},type:article|conference-paper|review",
         "sort": "relevance_score:desc" if by_relevance else "publication_date:desc", "per-page": n,
     }
     if mailto:
