@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project screening · litwiki</title>
+<style>
+:root{color-scheme:light dark;--bg:#f3f7f6;--fg:#17302d;--mut:#5f7773;--line:#cfdedb;--acc:#0f766e;--accfg:#fff;--card:#fff;--new:#b45309;--lib:#0f766e;--lnk:#6d28d9;--bad:#b3261e;--sel:#0f766e22}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1b1a;--fg:#dcebe8;--mut:#8fa8a4;--line:#27403c;--acc:#2dd4bf;--accfg:#06201d;--card:#162624;--new:#fbbf24;--lib:#2dd4bf;--lnk:#c4b5fd;--bad:#ff8a80;--sel:#2dd4bf26}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif;padding-bottom:5.5rem}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:.6rem 1rem;display:flex;flex-direction:column;gap:.5rem}
+.top{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap}
+.top a{color:var(--acc);text-decoration:none}.top h1{font-size:1.15rem;margin:0}.top .sp{flex:1}
+.tools{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.seg button{border:0;background:none;color:var(--fg);padding:.3rem .8rem;font:inherit;cursor:pointer}
+.seg button.on{background:var(--acc);color:var(--accfg);font-weight:600}
+input[type=search],select{padding:.35rem .6rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+input[type=search]{flex:1;min-width:10rem;max-width:22rem}
+button.b{background:var(--acc);color:var(--accfg);border:0;border-radius:8px;padding:.4rem .9rem;font:inherit;font-weight:600;cursor:pointer}
+button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}button.b[disabled]{opacity:.45;cursor:default}
+#info{color:var(--mut);font-size:.88rem}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.9rem;padding:1rem;align-items:start}
+.c{position:relative;background:var(--card);border:2px solid var(--line);border-radius:12px;padding:.8rem .9rem .7rem 2.5rem;cursor:pointer;display:flex;flex-direction:column;gap:.35rem;transition:border-color .12s,background .12s}
+.c:hover{border-color:var(--acc)}
+.c.sel{border-color:var(--acc);background:linear-gradient(var(--sel),var(--sel)),var(--card)}
+.c .tick{position:absolute;left:.7rem;top:.8rem;width:1.3rem;height:1.3rem;border:2px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--accfg)}
+.c.sel .tick{background:var(--acc);border-color:var(--acc)}.c.sel .tick::after{content:"✓"}
+.meta{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;font-size:.76rem}
+.tag{border-radius:999px;padding:.05rem .55rem;border:1px solid;font-weight:600}
+.tag.new{color:var(--new)}.tag.library{color:var(--lib)}.tag.linked{color:var(--lnk)}
+.fit{margin-left:auto;font-weight:800;font-size:.95rem;border-radius:8px;padding:.05rem .5rem;background:var(--bg);border:1px solid var(--line)}
+.c h3{margin:.1rem 0 0;font-size:1rem;line-height:1.3}
+.by{font-size:.84rem;color:var(--mut)}
+.why{margin:.15rem 0 0;padding:0 0 0 1.1rem;font-size:.88rem}.why li{margin:.1rem 0}
+.why.none{list-style:none;padding:0;color:var(--mut);font-style:italic}
+.abs{font-size:.85rem;color:var(--mut);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;white-space:pre-line}
+.c.open .abs{-webkit-line-clamp:unset;display:block}
+.row{display:flex;gap:.9rem;font-size:.84rem;flex-wrap:wrap}.row a,.row button{color:var(--acc);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-decoration:none}
+#bar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:1px solid var(--line);padding:.6rem 1rem calc(.6rem + env(safe-area-inset-bottom));display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;box-shadow:0 -4px 16px #0002}
+#bar .sp{flex:1}#sc{font-weight:600}
+#empty{padding:3rem 1rem;text-align:center;color:var(--mut);display:none}
+#toast{position:fixed;left:50%;bottom:5rem;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:.5rem 1rem;border-radius:8px;display:none;z-index:9;max-width:90vw}
+</style></head><body>
+<header>
+<div class="top"><a href="/app/projects">← Projects</a><h1 id="title"></h1><span class="sp"></span><a id="pg" href="#">Project page</a><a id="nt" href="#">Notes</a><a href="/app/swipe">Swipe</a></div>
+<div class="tools">
+<div class="seg" id="seg"></div>
+<input id="q" type="search" placeholder="Filter titles and abstracts">
+<select id="sort"><option value="fit">Best fit first</option><option value="year">Newest first</option><option value="title">Title A–Z</option></select>
+<button class="b sec" id="selall" type="button">Select shown</button>
+<button class="b" id="analyze" type="button">Analyze</button>
+</div>
+<div id="info"></div>
+</header>
+<div id="grid"></div><div id="empty">Nothing to show with these filters.</div>
+<div id="bar"><span id="sc">Nothing selected</span><span class="sp"></span>
+<button class="b sec" id="clr" type="button" disabled>Clear</button>
+<button class="b sec" id="dis" type="button" disabled>Dismiss new</button>
+<button class="b sec" id="unl" type="button" disabled>Unlink</button>
+<button class="b" id="lnk" type="button" disabled>Link to project</button>
+<button class="b" id="ing" type="button" disabled>Ingest new</button></div>
+<div id="toast" role="status"></div>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(()=>{
+const D=JSON.parse(document.getElementById("data").textContent),CSRF="__CSRF__",SLUG=D.slug,BASE="/app/project/"+encodeURIComponent(SLUG);
+let cards=D.cards,sel=new Set(),view=sessionStorageGet("view")||"library",sortBy="fit",q="",polling=false;
+function sessionStorageGet(k){try{return sessionStorage.getItem("proj:"+k)}catch(_){return null}}
+function sessionStorageSet(k,v){try{sessionStorage.setItem("proj:"+k,v)}catch(_){}}
+const $=id=>document.getElementById(id),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+$("title").textContent=D.title;$("pg").href=D.page_url;$("nt").href=BASE+"/notes";
+function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",5000)}
+async function post(path,params){
+  const body=new URLSearchParams({_csrf:CSRF});for(const[k,v] of Object.entries(params||{}))(Array.isArray(v)?v:[v]).forEach(x=>body.append(k,x));
+  const r=await fetch(path,{method:"POST",body,credentials:"same-origin"});
+  if(r.redirected&&r.url.includes("/app/login"))throw new Error("Session expired: log in again, then reload.");
+  let j={};try{j=await r.json()}catch(_){}
+  if(!r.ok)throw new Error(j.error||(r.status===403?"Session expired: reload this page.":"Server error ("+r.status+")"));
+  return j}
+const count=k=>cards.filter(c=>c.kind===k).length;
+function segs(){const s=$("seg");s.replaceChildren();
+  for(const[k,l] of [["library","In library"],["new","New"],["linked","Linked"]]){const b=el("button",view===k?"on":"",l+" ("+count(k)+")");b.type="button";b.onclick=()=>{view=k;sessionStorageSet("view",k);sel.clear();render()};s.append(b)}}
+function shown(){
+  const w=q.toLowerCase().split(/\s+/).filter(Boolean);
+  const r=cards.filter(c=>c.kind===view&&w.every(x=>(c.title+" "+c.abstract+" "+c.bullets.join(" ")).toLowerCase().includes(x)));
+  const cmp={fit:(a,b)=>(b.fit??-1)-(a.fit??-1)||b.overlap-a.overlap,year:(a,b)=>(+b.year||0)-(+a.year||0),title:(a,b)=>a.title.localeCompare(b.title)}[sortBy];
+  return r.sort(cmp)}
+function card(c){
+  const d=el("div","c"+(sel.has(c.id)?" sel":""));d.append(el("span","tick"));
+  const m=el("div","meta");m.append(el("span","tag "+c.kind,c.kind==="new"?"New":c.kind==="linked"?"In project":"Library"));
+  if(c.kind==="new"&&c.triage!=="")m.append(el("span","",""+c.triage+"/10 search score"));
+  if(c.fit!=null){const f=el("span","fit",c.fit+"/10");f.title="Fit to this project (Haiku)";f.style.color=c.fit>=7?"var(--lib)":c.fit>=4?"var(--new)":"var(--bad)";m.append(f)}
+  d.append(m,el("h3","",c.title));
+  const by=[c.authors,[c.venue,c.year].filter(Boolean).join(" ")].filter(Boolean).join(" · ");if(by)d.append(el("div","by",by));
+  if(c.bullets.length){const u=el("ul","why");c.bullets.forEach(b=>u.append(el("li","",b)));d.append(u)}
+  else if(c.kind!=="linked"){const u=el("ul","why none");u.append(el("li","","Not analyzed yet. Use Analyze for a fit score and bullets."));d.append(u)}
+  if(c.abstract){d.append(el("div","abs",c.abstract))}
+  const r=el("div","row");
+  if(c.abstract.length>220){const b=el("button","","Show more");b.type="button";b.onclick=e=>{e.stopPropagation();const o=d.classList.toggle("open");b.textContent=o?"Show less":"Show more"};r.append(b)}
+  if(c.url){const a=el("a","","Open");a.href=c.url;a.target="_blank";a.rel="noreferrer";a.onclick=e=>e.stopPropagation();r.append(a)}
+  if(c.pdf_url){const a=el("a","","PDF");a.href=c.pdf_url;a.target="_blank";a.rel="noreferrer";a.onclick=e=>e.stopPropagation();r.append(a)}
+  else if(c.kind==="new")r.append(el("span","by","no open-access PDF"));
+  d.append(r);
+  d.onclick=()=>{sel.has(c.id)?sel.delete(c.id):sel.add(c.id);d.classList.toggle("sel");bar()};
+  return d}
+function render(){
+  segs();const list=shown(),g=$("grid");g.replaceChildren(...list.map(card));$("empty").style.display=list.length?"none":"block";
+  const un=cards.filter(c=>c.kind!=="linked"&&c.fit==null).length,a=$("analyze");
+  a.disabled=polling||!un;a.textContent=polling?"Analyzing…":un?"Analyze "+Math.min(un,D.limit)+" more":"All analyzed";
+  $("info").textContent=list.length+" shown · "+un+" not analyzed yet"+(un?" (about $"+(Math.ceil(Math.min(un,D.limit)/12)*0.003).toFixed(2)+" for the next batch)":"");
+  bar()}
+function bar(){
+  const ids=[...sel],k=id=>cards.find(c=>c.id===id)?.kind,nl=ids.filter(i=>k(i)==="library").length,nn=ids.filter(i=>k(i)==="new").length,nk=ids.filter(i=>k(i)==="linked").length;
+  $("sc").textContent=ids.length?ids.length+" selected":"Nothing selected";
+  $("clr").disabled=!ids.length;$("lnk").disabled=!nl;$("lnk").textContent=nl?"Link "+nl+" to project":"Link to project";
+  $("ing").disabled=!nn;$("ing").textContent=nn?"Ingest "+nn+" new":"Ingest new";$("dis").disabled=!nn;$("dis").textContent=nn?"Dismiss "+nn+" new":"Dismiss new";
+  $("unl").disabled=!nk;$("unl").textContent=nk?"Unlink "+nk:"Unlink"}
+async function act(action,kind,label){
+  const ids=[...sel].filter(i=>cards.find(c=>c.id===i)?.kind===kind);if(!ids.length)return;
+  if(action==="ingest"&&!confirm("Ingest "+ids.length+" paper(s)? Each summary costs roughly $0.05-0.15."))return;
+  try{const r=await post(BASE+"/act",{action,id:ids});
+    const gone=new Set(ids);
+    if(action==="link")cards.forEach(c=>{if(gone.has(c.id))c.kind="linked"});
+    else if(action==="unlink")cards.forEach(c=>{if(gone.has(c.id))c.kind="library"});
+    else cards=cards.filter(c=>!gone.has(c.id));
+    ids.forEach(i=>sel.delete(i));toast(r.message||label);render()}
+  catch(e){toast(e.message)}}
+async function reload(){const r=await fetch(BASE+"/cards",{credentials:"same-origin"});if(r.ok){cards=(await r.json()).cards;render()}}
+async function poll(){
+  polling=true;render();
+  while(true){await new Promise(r=>setTimeout(r,2500));
+    let s;try{s=await (await fetch(BASE+"/status",{credentials:"same-origin"})).json()}catch(_){continue}
+    $("info").textContent="Analyzing… "+s.done+" / "+s.total;
+    if(!s.running){polling=false;if(s.error)toast("Stopped: "+s.error);await reload();return}}}
+$("analyze").onclick=async()=>{try{await post(BASE+"/analyze",{});poll()}catch(e){toast(e.message)}};
+$("lnk").onclick=()=>act("link","library","Linked");$("unl").onclick=()=>act("unlink","linked","Unlinked");
+$("ing").onclick=()=>act("ingest","new","Ingesting");$("dis").onclick=()=>act("dismiss","new","Dismissed");
+$("clr").onclick=()=>{sel.clear();render()};
+$("selall").onclick=()=>{shown().forEach(c=>sel.add(c.id));render()};
+$("q").oninput=e=>{q=e.target.value;render()};$("sort").onchange=e=>{sortBy=e.target.value;render()};
+if(!cards.some(c=>c.kind===view)){view=cards.some(c=>c.kind==="new")?"new":"library"}
+if(D.running)poll();else render();
+})();
+</script></body></html>

@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import ask as askmod, manual, notes, swipe, vault
+from . import ask as askmod, manual, notes, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -96,7 +96,7 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}
 label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:.6rem;align-items:flex-start}
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
-{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a>
+{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
@@ -180,6 +180,15 @@ TEMPLATES = {
 <span class="mut">Replaces the generated summary with one written from the full text (about $0.05-0.15). Tags, collections, concepts, reviews and your notes are kept.
 It runs in the background and the page updates when the site rebuilds (about a minute).</span></p></form>
 {% endblock %}""",
+    "projects.html": """{% extends "base.html" %}{% block body %}<h1>Projects</h1>
+<p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Create one with <code>litwiki review-new "Title"</code>, then fill in its page in Obsidian.</p>
+{% if not projects %}<p class="mut">No projects yet.</p>{% endif %}
+{% for p in projects %}<div class="card"><b><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></b>
+<div class="mut">{{ p.linked }} linked paper(s) · {{ p.waiting }} new candidate(s) waiting · {{ p.terms }} search term(s)</div>
+<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a></div>
+<form method="post" action="/app/project/{{ p.slug }}/daily" style="margin-top:.4rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b {{ 'sec' if p.daily else '' }}">{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button>
+<span class="mut">{% if p.status != 'active' %}archived projects are skipped{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span></form></div>{% endfor %}{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -395,6 +404,120 @@ async def swipe_commit(request: Request) -> Response:
     return JSONResponse(r)
 
 
+def projects_list(request: Request) -> Response:
+    return render(request, "projects.html", title="Projects", projects=project.summary(CFG))
+
+
+def _project_or_404(request: Request):
+    slug = request.path_params["slug"]
+    try:
+        return slug, project.get(CFG, slug)
+    except KeyError:
+        return slug, None
+
+
+def project_get(request: Request) -> Response:
+    """Grid of cards for bulk screening: library papers, new candidates and linked papers of one project."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    data = {"slug": slug, "title": rv["title"], "page_url": f"/reviews/{slug}/", "limit": 120,
+            "running": bool(project.JOBS.get(slug, {}).get("running")), "cards": project.cards(CFG, slug)}
+    page = Path(__file__).with_name("project_page.html").read_text(encoding="utf-8")
+    token = json.dumps(get_session(request)["csrf"])[1:-1]
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob), headers={"Cache-Control": "no-store"})
+
+
+async def project_cards(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    return JSONResponse({"cards": await run_in_threadpool(project.cards, CFG, slug)})
+
+
+def project_status(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    return JSONResponse(project.JOBS.get(slug, {"running": False, "done": 0, "total": 0, "error": None}))
+
+
+def project_analyze(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    if not project.start_analysis(CFG, slug):
+        return JSONResponse({"error": "An analysis is already running for this project."}, status_code=409)
+    return JSONResponse({"started": True})
+
+
+async def project_act(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    form = request.state.form
+    action, ids = str(form.get("action", "")), [str(i) for i in form.getlist("id")]
+    if not ids:
+        return JSONResponse({"error": "Nothing selected."}, status_code=400)
+    if action in ("link", "unlink"):
+        stems = [i.removeprefix("page:") for i in ids if i.startswith("page:")]
+        n = await run_in_threadpool(project.link, CFG, slug, stems, action == "unlink")
+        if n:
+            request_build()
+        return JSONResponse({"message": f"{'Linked' if action == 'link' else 'Unlinked'} {n} paper(s)."})
+    cids = [i for i in ids if not i.startswith("page:")]
+    if action == "ingest":
+        n = await run_in_threadpool(tick_items, CFG, cids)
+        if n:
+            spawn_queue()
+        return JSONResponse({"message": f"Ingesting {n} paper(s); they join the project when done."})
+    if action == "dismiss":
+        con = db()
+        con.executemany("UPDATE candidates SET status='rejected' WHERE id=? AND status='digested'", [(i,) for i in cids])
+        con.commit()
+        return JSONResponse({"message": f"Dismissed {len(cids)} candidate(s)."})
+    return JSONResponse({"error": f"Unknown action {action!r}."}, status_code=400)
+
+
+async def project_daily(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    on = str(request.state.form.get("on", "")) == "1"
+    await run_in_threadpool(project.set_daily, CFG, slug, on)
+    return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
+
+
+def project_notes_get(request: Request) -> Response:
+    """The project's whiteboard: a markdown scratchpad with quick capture and a picker for linked papers."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    text, mtime = project.read_notes(CFG, slug)
+    data = {"slug": slug, "title": rv["title"], "page_url": f"/reviews/{slug}/", "text": text, "mtime": mtime,
+            "skeleton": project.SKELETON, "papers": project.linked_papers(CFG, slug)}
+    page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
+    token = json.dumps(get_session(request)["csrf"])[1:-1]
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob), headers={"Cache-Control": "no-store"})
+
+
+async def project_notes_post(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    form = request.state.form
+    try:
+        mtime = await run_in_threadpool(project.save_notes, CFG, slug, str(form.get("text", "")), int(form.get("mtime") or 0))
+    except notes.Conflict:
+        text, cur = await run_in_threadpool(project.read_notes, CFG, slug)
+        return JSONResponse({"error": "changed elsewhere", "text": text, "mtime": cur}, status_code=409)
+    if form.get("publish"):
+        request_build()
+    return JSONResponse({"mtime": mtime})
+
+
 def papers(request: Request) -> Response:
     v = CFG["vault"]
     q = request.query_params.get("q", "").lower().strip()
@@ -586,6 +709,15 @@ def create_app(cfg) -> Starlette:
         Route("/app/run", guard(run_now), methods=["POST"]),
         Route("/app/inbox", guard(inbox), methods=["GET"]),
         Route("/app/inbox", guard(inbox_action), methods=["POST"]),
+        Route("/app/projects", guard(projects_list), methods=["GET"]),
+        Route("/app/project/{slug}", guard(project_get), methods=["GET"]),
+        Route("/app/project/{slug}/cards", guard(project_cards), methods=["GET"]),
+        Route("/app/project/{slug}/status", guard(project_status), methods=["GET"]),
+        Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),
+        Route("/app/project/{slug}/act", guard(project_act), methods=["POST"]),
+        Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
+        Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
+        Route("/app/project/{slug}/notes", guard(project_notes_post), methods=["POST"]),
         Route("/app/swipe", guard(swipe_get), methods=["GET"]),
         Route("/app/swipe/decide", guard(swipe_decide), methods=["POST"]),
         Route("/app/swipe/commit", guard(swipe_commit), methods=["POST"]),

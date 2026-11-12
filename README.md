@@ -103,6 +103,29 @@ turns out to be a duplicate of an existing page, the PDF goes to that page. A pa
 `auto`) is refused unless `--force` / "Overwrite my edits". The PDF needs selectable text (scanned PDFs: OCR first). The web upload runs
 as a background job; failures are sent as notifications and logged in `logs/web-jobs.log`. Zotero is not modified.
 
+## Projects (grow a literature review over time)
+A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work. Create one with `litwiki review-new "Title"`, write its question
+and scope, then open **Projects** in the web UI (`/app/projects`) or press *Screen papers for this project* on its wiki page.
+`/app/project/<slug>` is a grid of cards for bulk decisions (visually distinct from the swipe view): **In library** (papers you already have that are not
+linked yet), **New** (candidates from the project's searches, see *Literature reviews*) and **Linked**. Tap cards to select them, then **Link to project**
+(free), **Ingest new** (summarises them, about $0.05-0.15 each, and they join the project), **Dismiss new** or **Unlink**. **Analyze** runs a cheap Haiku pass
+(about $0.002 per 12 papers, so a whole library costs a few cents) that gives each card a 0-10 *fit* score and 2-3 bullets on how it relates to the project;
+results are cached, library papers are analysed most-keyword-overlap first, 120 at a time.
+
+**Daily project digests.** Set `daily: true` on a project's page (or press *Turn on daily digest* on `/app/projects`; `status: archived` pauses it). After the
+global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
+window), scores them with the triage model against the project's question and scope, and writes `digests/project-<slug>-<date>.md` (nothing is written when
+nothing qualifies). Papers already seen for the project, ingested, or dismissed are skipped. The picks appear in the swipe queue, Inbox, Discord and the project's
+*New* tab; ingesting one links it to the project. `litwiki search <slug> --recent` runs the same thing now. Cost: a few triage calls (a fraction of a cent each)
+per project per day; per-term result cap: `discovery.project_daily_per_term` (default 25).
+
+**Project notes (whiteboard).** `/app/project/<slug>/notes` is a free-form markdown scratchpad per project, stored in `notes/projects/<slug>.md` (so Obsidian can edit
+it too). New notes start with *Ideas / Questions / Outline / To do* headings; the box above the editor is a quick-add that appends a dated bullet; the side panel lists
+the project's linked papers and inserts a `[[papers/...|Title]]` link at the cursor when you click one. It autosaves a few seconds after you stop typing (no site
+rebuild), **Save & publish** (or Ctrl/⌘+S) also rebuilds the wiki, where the notes appear on the project's page under *Notes*. If the file changed elsewhere (Obsidian)
+since you opened it, a save is refused and you choose *Keep mine* or *Use theirs*, so nothing is silently overwritten. Membership is the `reviews:` list in a paper's frontmatter (so
+`tag:#review/<slug>` works in Obsidian), and the review page keeps an auto-managed *Linked papers* list.
+
 ## Duplicates
 The same paper can appear twice (added twice in Zotero, a bare arXiv link next to the real item, a preprint and its published
 version). Pages count as duplicates when they share a **DOI**, an **arXiv id**, or an identical title (>= 20 characters, with
@@ -148,6 +171,9 @@ Log in at `<your site>/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the stat
 
 ## Paper map (`/clusters/`)
 Interactive 2-D map of every paper (pan/zoom, hover for TL;DR, click to open), built with the site and linked from both navbars.
+Papers are shaded by main concept in translucent regions that overlap like a Venn diagram, with each concept's name above its region (drawn in front of the dots; it
+sticks to the top of the screen while any of the region is visible). Built for touch as well as mouse: pinch/spread to zoom, one finger to pan, tap a paper to focus it,
+plus +/−/⌂ buttons (and `+`/`-` keys). On narrow screens (under 900 px) the details panel starts hidden so the map gets the full height; it opens when you pick a paper, or with **Details**.
 Switch the layout between **TL;DR text similarity** (TF-IDF → SVD → t-SNE over the page sections in `config.yaml` → `clusters.sections`)
 and **concept membership**. Colour = the paper's primary (first-listed) concept; filter by concept, year or text; click legend rows to hide groups.
 Layouts are cached in `state/clusters.json` and recomputed only when a paper's text or concepts change; new layouts are aligned

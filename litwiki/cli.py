@@ -85,7 +85,8 @@ def cmd_retag(cfg, a):
 def cmd_search(cfg, a):
     from .discover import search_review
     with run_lock():
-        r = search_review(cfg, a.review, since_year=a.since, extra_terms=a.terms)
+        r = search_review(cfg, a.review, since_year=a.since, extra_terms=a.terms,
+                          recent_days=(a.recent or cfg["discovery"]["lookback_days"]) if a.recent is not None else None)
     print(r)
 
 
@@ -316,9 +317,12 @@ def cmd_hourly(cfg, a):
 
 
 def cmd_daily(cfg, a):
-    from .discover import discover
+    from .discover import discover, run_daily_projects
     with run_lock():
         discover(cfg)
+        projects = run_daily_projects(cfg)
+        if projects:
+            log.info("daily: project digests %s", projects)
     from .site import build
     build(cfg)
 
@@ -346,6 +350,7 @@ def main():
     sp.add_argument("review", help="review slug, e.g. grammar-based-fuzzing")
     sp.add_argument("--since", type=int, help="earliest publication year (default: the page's since_year)")
     sp.add_argument("--terms", nargs="+", help="extra one-off search terms")
+    sp.add_argument("--recent", nargs="?", type=int, const=0, help="run the project's daily-style search instead (last N days; default discovery.lookback_days)")
     sp.set_defaults(f=cmd_search)
     sp = sub.add_parser("review-new", help="scaffold a literature-review page in the vault")
     sp.add_argument("title", nargs="+")
