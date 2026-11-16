@@ -181,14 +181,43 @@ TEMPLATES = {
 It runs in the background and the page updates when the site rebuilds (about a minute).</span></p></form>
 {% endblock %}""",
     "projects.html": """{% extends "base.html" %}{% block body %}<h1>Projects</h1>
-<p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Create one with <code>litwiki review-new "Title"</code>, then fill in its page in Obsidian.</p>
+<p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Edit the question and scope on its page in Obsidian, or the search terms here.</p>
+<p><a class="b" href="/app/projects/new">New project</a></p>
 {% if not projects %}<p class="mut">No projects yet.</p>{% endif %}
 {% for p in projects %}<div class="card"><b><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></b>
 <div class="mut">{{ p.linked }} linked paper(s) · {{ p.waiting }} new candidate(s) waiting · {{ p.terms }} search term(s)</div>
-<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a></div>
+<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a> · <a href="/app/project/{{ p.slug }}/settings">Settings</a></div>
 <form method="post" action="/app/project/{{ p.slug }}/daily" style="margin-top:.4rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b {{ 'sec' if p.daily else '' }}">{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button>
 <span class="mut">{% if p.status != 'active' %}archived projects are skipped{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span></form></div>{% endfor %}{% endblock %}""",
+    "project_form.html": """{% extends "base.html" %}{% block body %}
+<p><a href="/app/projects">← Projects</a></p>
+<h1>{% if mode == 'new' %}New project{% else %}Settings: {{ f.title }}{% endif %}</h1>
+<form method="post" action="{{ action }}" class="card" id="pf"><input type="hidden" name="_csrf" value="{{ csrf }}">
+{% if mode == 'new' %}<label for="title">Title</label><input id="title" type="text" name="title" value="{{ f.title }}" maxlength="120" required autofocus>
+<label for="question">Research question <span class="mut">(what is this review trying to find out?)</span></label>
+<textarea id="question" name="question" rows="3">{{ f.question }}</textarea>
+<label for="scope">Scope <span class="mut">(what is in, and what is out; candidates are scored against this)</span></label>
+<textarea id="scope" name="scope" rows="3">{{ f.scope }}</textarea>{% endif %}
+<label for="terms">Search terms <span class="mut">(one per line, 1-4 words each; searched on arXiv and OpenAlex)</span></label>
+<textarea id="terms" name="terms" rows="7">{{ f.terms }}</textarea>
+<label for="exclude">Exclusions <span class="mut">(topics or paper types to score down, in plain words)</span></label>
+<textarea id="exclude" name="exclude" rows="2">{{ f.exclude }}</textarea>
+{% if mode == 'new' %}<p><button type="button" class="b sec" id="suggest">Suggest terms</button>
+<span class="mut" id="smsg">Fills the two boxes above from your title and question (one small LLM call, about a cent). You can edit the result.</span></p>
+{% else %}<label for="status">Status</label><select id="status" name="status">
+<option value="active"{% if f.status == 'active' %} selected{% endif %}>active</option>
+<option value="archived"{% if f.status == 'archived' %} selected{% endif %}>archived (skipped by the daily run)</option></select>{% endif %}
+<p><button class="b">{% if mode == 'new' %}Create project{% else %}Save settings{% endif %}</button></p></form>
+{% if mode == 'new' %}<script>
+const q=s=>document.querySelector(s), btn=q('#suggest');
+btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
+ try{const body=new URLSearchParams({_csrf:q('input[name=_csrf]').value,title:q('#title').value,question:q('#question').value,scope:q('#scope').value});
+  const r=await fetch('/app/projects/suggest',{method:'POST',body}); const j=await r.json();
+  if(!r.ok)throw new Error(j.error||r.status);
+  q('#terms').value=j.terms.join('\\n'); q('#exclude').value=j.exclude; q('#smsg').textContent='Suggested: edit freely before creating.';
+ }catch(e){q('#smsg').textContent='Could not suggest: '+e.message;} btn.disabled=false;};
+</script>{% endif %}{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -202,8 +231,8 @@ ENV = Environment(loader=DictLoader(TEMPLATES), autoescape=select_autoescape(def
 
 def render(request: Request, name: str, status: int = 200, **ctx) -> Response:
     sess = get_session(request)
-    flash = None
-    if tok := request.cookies.get("lw_flash"):
+    flash = ctx.pop("flash", None)  # a form error shown on this response
+    if flash is None and (tok := request.cookies.get("lw_flash")):
         try:
             flash = _serializer("flash").loads(tok, max_age=300)
         except BadSignature:
@@ -489,6 +518,64 @@ async def project_daily(request: Request) -> Response:
     return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
 
 
+def project_new_get(request: Request) -> Response:
+    return render(request, "project_form.html", title="New project", mode="new", action="/app/projects/new",
+                  f={"title": "", "question": "", "scope": "", "terms": "", "exclude": ""})
+
+
+async def project_new_post(request: Request) -> Response:
+    form = request.state.form
+    f = {k: str(form.get(k, "")) for k in ("title", "question", "scope", "terms", "exclude")}
+    try:
+        slug = await run_in_threadpool(project.create, CFG, f["title"], f["question"], f["scope"], f["terms"], f["exclude"])
+    except project.ProjectError as e:
+        return render(request, "project_form.html", status=400, title="New project", mode="new",
+                      action="/app/projects/new", f=f, flash={"msg": str(e), "kind": "err"})
+    request_build()  # so /reviews/<slug>/ exists
+    return redirect(f"/app/project/{slug}", f"Created project '{f['title']}'. Screen papers to link or find some.")
+
+
+async def project_suggest(request: Request) -> Response:
+    form = request.state.form
+    try:
+        out = await run_in_threadpool(project.suggest, CFG, str(form.get("title", "")),
+                                      str(form.get("question", "")), str(form.get("scope", "")))
+    except project.ProjectError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:  # LLM budget, claude CLI failures
+        log.warning("project suggest failed: %s", e)
+        return JSONResponse({"error": str(e)[:200]}, status_code=502)
+    return JSONResponse(out)
+
+
+def _settings_form(rv: dict) -> dict:
+    return {"title": rv["title"], "terms": "\n".join(rv.get("search_terms") or []),
+            "exclude": rv.get("exclude") or "", "status": str(rv.get("status", "active"))}
+
+
+def project_settings_get(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    return render(request, "project_form.html", title=f"Settings: {rv['title']}", mode="edit",
+                  action=f"/app/project/{slug}/settings", f=_settings_form(rv))
+
+
+async def project_settings_post(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    form = request.state.form
+    try:
+        await run_in_threadpool(project.update_settings, CFG, slug, str(form.get("terms", "")),
+                                str(form.get("exclude", "")), str(form.get("status", "active")))
+    except project.ProjectError as e:
+        return render(request, "project_form.html", status=400, title=f"Settings: {rv['title']}", mode="edit",
+                      action=f"/app/project/{slug}/settings", f={**_settings_form(rv), "exclude": str(form.get("exclude", ""))},
+                      flash={"msg": str(e), "kind": "err"})
+    return redirect("/app/projects", f"Saved settings for {rv['title']}.")
+
+
 def project_notes_get(request: Request) -> Response:
     """The project's whiteboard: a markdown scratchpad with quick capture and a picker for linked papers."""
     slug, rv = _project_or_404(request)
@@ -710,6 +797,11 @@ def create_app(cfg) -> Starlette:
         Route("/app/inbox", guard(inbox), methods=["GET"]),
         Route("/app/inbox", guard(inbox_action), methods=["POST"]),
         Route("/app/projects", guard(projects_list), methods=["GET"]),
+        Route("/app/projects/new", guard(project_new_get), methods=["GET"]),
+        Route("/app/projects/new", guard(project_new_post), methods=["POST"]),
+        Route("/app/projects/suggest", guard(project_suggest), methods=["POST"]),
+        Route("/app/project/{slug}/settings", guard(project_settings_get), methods=["GET"]),
+        Route("/app/project/{slug}/settings", guard(project_settings_post), methods=["POST"]),
         Route("/app/project/{slug}", guard(project_get), methods=["GET"]),
         Route("/app/project/{slug}/cards", guard(project_cards), methods=["GET"]),
         Route("/app/project/{slug}/status", guard(project_status), methods=["GET"]),

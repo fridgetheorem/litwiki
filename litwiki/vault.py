@@ -50,8 +50,9 @@ def create_review(vault: Path, title: str, question: str = "", scope: str = "",
         "status": "active",          # active | archived (archived projects are skipped by the daily run)
         "created": date.today().isoformat(),
     }
-    body = (f"# {title}\n\n## Research question\n\n_What is this review trying to find out?_\n\n"
-            "## Scope\n\n_What is in scope, and what is not. Candidates are scored against this text._\n\n"
+    q = question.strip() or "_What is this review trying to find out?_"
+    sc = scope.strip() or "_What is in scope, and what is not. Candidates are scored against this text._"
+    body = (f"# {title}\n\n## Research question\n\n{q}\n\n## Scope\n\n{sc}\n\n"
             f"## How to use\n\nFill in `search_terms` above, then set `run: true` (or run `litwiki search {slug}`). "
             f"A digest appears under `digests/`; tick items to ingest them. Papers ingested from it are tagged "
             f"`#review/{slug}`.\n")
