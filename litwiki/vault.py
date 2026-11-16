@@ -30,26 +30,29 @@ def reviews(vault: Path) -> dict[str, dict]:
     return out
 
 
-def create_review(vault: Path, title: str) -> str:
-    """Scaffold reviews/<slug>.md for you to fill in (research question, scope, search terms)."""
+def create_review(vault: Path, title: str, question: str = "", scope: str = "",
+                  search_terms: list[str] | None = None, exclude: str = "") -> str:
+    """Scaffold reviews/<slug>.md. With no arguments it is a template to fill in by hand (the CLI); the web form
+    passes the question, scope, search terms and exclusions so the page is usable straight away."""
     slug = slugify(title, 50)
     path = vault / REVIEWS / f"{slug}.md"
     if path.exists():
         return slug
     fm = {
         "title": title,
-        "search_terms": [],          # phrases searched on arXiv + OpenAlex; add several, 1-4 words each
+        "search_terms": list(search_terms or []),  # phrases searched on arXiv + OpenAlex; add several, 1-4 words each
         "arxiv_categories": [],      # optional, e.g. cs.CR, cs.SE
         "since_year": date.today().year - 5,
         "max_per_term": 100,         # candidates fetched per term per source
-        "exclude": "",               # topics / paper types to score down, in plain words
+        "exclude": exclude,          # topics / paper types to score down, in plain words
         "run": False,                # set to true in Obsidian to run a search at the next hourly job
         "daily": False,              # true = also search this project every day (recent papers only) and write a digest
         "status": "active",          # active | archived (archived projects are skipped by the daily run)
         "created": date.today().isoformat(),
     }
-    body = (f"# {title}\n\n## Research question\n\n_What is this review trying to find out?_\n\n"
-            "## Scope\n\n_What is in scope, and what is not. Candidates are scored against this text._\n\n"
+    q = question.strip() or "_What is this review trying to find out?_"
+    sc = scope.strip() or "_What is in scope, and what is not. Candidates are scored against this text._"
+    body = (f"# {title}\n\n## Research question\n\n{q}\n\n## Scope\n\n{sc}\n\n"
             f"## How to use\n\nFill in `search_terms` above, then set `run: true` (or run `litwiki search {slug}`). "
             f"A digest appears under `digests/`; tick items to ingest them. Papers ingested from it are tagged "
             f"`#review/{slug}`.\n")
