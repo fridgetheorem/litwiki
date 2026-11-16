@@ -290,3 +290,74 @@ def summary(cfg) -> list[dict]:
     return [{"slug": s, "title": rv["title"], "linked": counts.get(s, 0), "waiting": waiting.get(s, 0),
              "terms": len(rv.get("search_terms") or []), "daily": rv.get("daily") is True,
              "status": str(rv.get("status", "active"))} for s, rv in vault.reviews(v).items()]
+
+
+# ---------- creating and configuring projects from the web app ----------
+
+class ProjectError(ValueError):
+    """A project form was filled in wrongly; the message is shown to the user."""
+
+
+def clean_terms(raw) -> list[str]:
+    """Search terms from a textarea (one per line, or comma-separated) or a list: trimmed, de-duplicated, capped."""
+    items = re.split(r"[\n,;]+", raw) if isinstance(raw, str) else list(raw or [])
+    out: list[str] = []
+    for t in items:
+        t = " ".join(str(t).split())[:60]
+        if t and t.lower() not in {o.lower() for o in out}:
+            out.append(t)
+    return out[:20]
+
+
+def create(cfg, title: str, question: str = "", scope: str = "", terms=(), exclude: str = "") -> str:
+    """Create reviews/<slug>.md from the web form and return its slug."""
+    from .common import slugify
+    title = " ".join(title.split())
+    if not title:
+        raise ProjectError("Give the project a title.")
+    if len(title) > 120:
+        raise ProjectError("Keep the title under 120 characters.")
+    slug = slugify(title, 50)
+    if slug in vault.reviews(cfg["vault"]):
+        raise ProjectError(f"A project called '{slug}' already exists; pick a different title.")
+    vault.create_review(cfg["vault"], title, question=question[:4000], scope=scope[:4000],
+                        search_terms=clean_terms(terms), exclude=" ".join(exclude.split())[:1000])
+    return slug
+
+
+def update_settings(cfg, slug: str, terms, exclude: str, status: str) -> None:
+    """Edit a project's search terms, exclusions and active/archived status (frontmatter only; the body is yours)."""
+    rv = get(cfg, slug)
+    if status not in ("active", "archived"):
+        raise ProjectError("Status must be active or archived.")
+    fm, body = read_page(rv["path"])
+    fm["search_terms"] = clean_terms(terms)
+    fm["exclude"] = " ".join(exclude.split())[:1000]
+    fm["status"] = status
+    write_page(rv["path"], fm, body)
+
+
+SUGGEST_SYSTEM = """You help a researcher set up the automatic literature search for a new project (a literature review).
+From the title and research question, propose:
+- terms: 5-8 search phrases of 1-4 words each, as they would appear in paper titles or abstracts (arXiv and OpenAlex
+  search). Mix the core topic with close variants; avoid single generic words such as "security" or "learning".
+- exclude: one short sentence naming topics or paper types that are probably NOT wanted (empty string if nothing is obvious).
+Do not invent details the researcher did not give."""
+
+SUGGEST_SCHEMA = {
+    "type": "object",
+    "properties": {"terms": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+                   "exclude": {"type": "string"}},
+    "required": ["terms", "exclude"],
+}
+
+
+def suggest(cfg, title: str, question: str, scope: str = "") -> dict:
+    """One cheap Haiku call: starting search terms and exclusions the user then edits."""
+    from .llm import claude
+    if not (title.strip() or question.strip()):
+        raise ProjectError("Fill in the title or the research question first.")
+    out = claude(cfg, f"TITLE: {title.strip()}\nRESEARCH QUESTION: {question.strip()[:3000]}\nSCOPE: {scope.strip()[:3000]}",
+                 system=SUGGEST_SYSTEM, model=cfg["llm"]["triage_model"], schema=SUGGEST_SCHEMA,
+                 purpose="project-suggest", ref=title[:40])
+    return {"terms": clean_terms(out["terms"]), "exclude": " ".join(str(out["exclude"]).split())[:1000]}
