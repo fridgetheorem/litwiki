@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import ask as askmod, manual, notes, project, swipe, vault
+from . import ask as askmod, exclusions, manual, notes, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -97,7 +97,7 @@ label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
 {% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a>
-<a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><span class="sp"></span>
+<a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
 
@@ -218,6 +218,20 @@ btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
   q('#terms').value=j.terms.join('\\n'); q('#exclude').value=j.exclude; q('#smsg').textContent='Suggested: edit freely before creating.';
  }catch(e){q('#smsg').textContent='Could not suggest: '+e.message;} btn.disabled=false;};
 </script>{% endif %}{% endblock %}""",
+    "settings.html": """{% extends "base.html" %}{% block body %}<h1>Settings</h1>
+<h2>Daily digest: excluded topics</h2>
+<p class="mut">The general daily digest skips these. (Projects have their own exclusions under Projects → Settings.)
+Papers dropped by a keyword are not shown anywhere, so keep keywords specific.</p>
+<form method="post" action="/app/settings" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<label for="kw">Keywords <span class="mut">(one per line; whole words, any case; a paper whose title or abstract contains one is dropped before scoring)</span></label>
+<textarea id="kw" name="keywords" rows="6" placeholder="blockchain&#10;smart contract">{{ f.keywords }}</textarea>
+<label for="tp">Topics <span class="mut">(plain words; the scoring model rates papers mainly about these 0-2; catches papers that never use your keyword)</span></label>
+<textarea id="tp" name="topics" rows="2" placeholder="quantum computing; hardware side channels">{{ f.topics }}</textarea>
+{% if fixed.topics or fixed.keywords %}<p class="mut">Also set by the host in config.yaml (read-only here):
+{% if fixed.keywords %}keywords: {{ fixed.keywords|join(', ') }}. {% endif %}{% if fixed.topics %}topics: {{ fixed.topics }}.{% endif %}</p>{% endif %}
+<p><button class="b">Save</button> <span class="mut">Takes effect at the next daily run.</span></p></form>
+{% if dropped %}<h2>Recently dropped</h2><p class="mut">The latest papers removed by keyword, so you can spot a keyword that is too broad.</p>
+{% for d in dropped %}<div>{{ d.title }} <span class="mut">· matched “{{ d.kw }}”</span></div>{% endfor %}{% endif %}{% endblock %}""",
     "notes.html": """{% extends "base.html" %}{% block body %}<h1>Notes: {{ paper_title }}</h1>
 <p><a href="/papers/{{ stem }}/">View paper page</a></p>
 <form method="post" action="/app/notes/{{ stem }}"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -518,6 +532,28 @@ async def project_daily(request: Request) -> Response:
     return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
 
 
+def _exclusion_page(request: Request, f=None, status: int = 200, flash=None) -> Response:
+    saved = exclusions.load_saved()
+    f = f or {"keywords": "\n".join(saved["keywords"]), "topics": saved["topics"]}
+    dc = CFG.get("discovery") or {}
+    fixed = {"keywords": exclusions.clean_keywords(dc.get("exclude_keywords")), "topics": str(dc.get("exclude_topics") or "").strip()}
+    dropped = []
+    for r in db().execute("SELECT title, data FROM candidates WHERE status='excluded' ORDER BY seen DESC LIMIT 10"):
+        dropped.append({"title": r["title"], "kw": json.loads(r["data"]).get("excluded_by", "")})
+    return render(request, "settings.html", status=status, title="Settings", f=f, fixed=fixed, dropped=dropped, flash=flash)
+
+
+def settings_get(request: Request) -> Response:
+    return _exclusion_page(request)
+
+
+async def settings_post(request: Request) -> Response:
+    form = request.state.form
+    kws, topics = exclusions.clean_keywords(str(form.get("keywords", ""))), str(form.get("topics", ""))
+    await run_in_threadpool(exclusions.save, topics, kws)
+    return redirect("/app/settings", f"Saved: {len(kws)} keyword(s){' and a topics note' if topics.strip() else ''}.")
+
+
 def project_new_get(request: Request) -> Response:
     return render(request, "project_form.html", title="New project", mode="new", action="/app/projects/new",
                   f={"title": "", "question": "", "scope": "", "terms": "", "exclude": ""})
@@ -797,6 +833,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/inbox", guard(inbox), methods=["GET"]),
         Route("/app/inbox", guard(inbox_action), methods=["POST"]),
         Route("/app/projects", guard(projects_list), methods=["GET"]),
+        Route("/app/settings", guard(settings_get), methods=["GET"]),
+        Route("/app/settings", guard(settings_post), methods=["POST"]),
         Route("/app/projects/new", guard(project_new_get), methods=["GET"]),
         Route("/app/projects/new", guard(project_new_post), methods=["POST"]),
         Route("/app/projects/suggest", guard(project_suggest), methods=["POST"]),

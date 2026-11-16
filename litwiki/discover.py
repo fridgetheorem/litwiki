@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import feedparser
 import requests
 
-from . import vault
+from . import exclusions, vault
 from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
 from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
 from .llm import BudgetExceeded, claude
@@ -133,7 +133,9 @@ Their interests are exactly the concept catalog provided. For each candidate, sc
 Be strict: keyword overlap alone is not relevance. Penalise low-substance items (announcements, listicles).
 Also weigh venue quality: subtract 2-3 points for obscure regional journals, predatory-looking venues, or
 student-project-like work; established security/SE/ML/formal-methods venues and substantive arXiv preprints
-need no penalty."""
+need no penalty.
+If an EXCLUDED TOPICS section is given, the researcher does not want those: score anything that is mainly
+about them 0-2, even if it also touches a catalog concept."""
 
 REVIEW_TRIAGE_SYSTEM = """You screen literature candidates for ONE specific literature review. The review's
 research question, scope and exclusions are given. For each candidate, score relevance to THIS REVIEW 0-10:
@@ -162,9 +164,11 @@ def review_context(rv: dict) -> str:
     return f"REVIEW: {rv['title']}\n{text}{excl}\nSEARCH TERMS: {', '.join(rv.get('search_terms') or [])}"
 
 
-def triage(cfg, cands: list[dict], review: dict | None = None) -> None:
+def triage(cfg, cands: list[dict], review: dict | None = None, exclude_topics: str = "") -> None:
     catalog = vault.concept_catalog(cfg["vault"])
     system, context = TRIAGE_SYSTEM, f"CONCEPT CATALOG:\n{catalog}"
+    if exclude_topics:
+        context += f"\n\nEXCLUDED TOPICS: {exclude_topics}"
     if review:
         system = REVIEW_TRIAGE_SYSTEM
         context = f"{review_context(review)}\n\nCONCEPT CATALOG (for the 'concepts' field only):\n{catalog}"
@@ -214,14 +218,21 @@ def discover(cfg) -> dict:
 
     fresh = [c for c in found.values()
              if c["id"] not in known and title_key(c["title"]) not in known_titles and c["title"]]
-    log.info("discovery: %d raw, %d new", len(found), len(fresh))
+    rules = exclusions.load(cfg)
+    fresh, dropped = exclusions.split(fresh, rules["keywords"])
+    for c, kw in dropped:  # remembered, so they are not fetched and checked again tomorrow
+        con.execute("INSERT OR IGNORE INTO candidates(id, title, data, score, status) VALUES(?,?,?,?,?)",
+                    (c["id"], c["title"], json.dumps({**c, "excluded_by": kw}), 0, "excluded"))
+    con.commit()
+    log.info("discovery: %d raw, %d new, %d dropped by exclusion keywords%s", len(found), len(fresh) + len(dropped),
+             len(dropped), f" ({', '.join(sorted({k for _, k in dropped}))})" if dropped else "")
     if len(errors) > 10:
         notify(f"Discovery: {len(errors)} source queries failed (e.g. {errors[0][:200]})", level="warn")
     if fresh:
         try:
-            triage(cfg, fresh)
+            triage(cfg, fresh, exclude_topics=rules["topics"])
         except BudgetExceeded:
-            return {"raw": len(found), "new": len(fresh), "digest": 0}
+            return {"raw": len(found), "new": len(fresh), "excluded": len(dropped), "digest": 0}
     for c in fresh:
         con.execute("INSERT OR IGNORE INTO candidates(id, title, data, score, status) VALUES(?,?,?,?,?)",
                     (c["id"], c["title"], json.dumps(c), c.get("score", 0), "triaged"))
@@ -236,7 +247,7 @@ def discover(cfg) -> dict:
         link = f"\n{url}/{path.removesuffix('.md')}/\nSwipe through them: {url}/app/swipe" if url else ""
         top = "\n".join(f"• {c['title']} ({c['score']}/10)" for c in picked[:5])
         notify(f"Daily digest: {len(picked)} new item(s). Swipe or tick the ones to ingest.{link}\n{top}")
-    return {"raw": len(found), "new": len(fresh), "digest": len(picked)}
+    return {"raw": len(found), "new": len(fresh), "excluded": len(dropped), "digest": len(picked)}
 
 
 def write_digest(cfg, picked: list[dict], review: dict | None = None, prefix: str = "search") -> str:
