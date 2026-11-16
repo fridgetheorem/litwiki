@@ -103,9 +103,17 @@ turns out to be a duplicate of an existing page, the PDF goes to that page. A pa
 `auto`) is refused unless `--force` / "Overwrite my edits". The PDF needs selectable text (scanned PDFs: OCR first). The web upload runs
 as a background job; failures are sent as notifications and logged in `logs/web-jobs.log`. Zotero is not modified.
 
+## Excluding topics from the daily digest
+The general daily digest skips what you exclude, in two layers. **Keywords** are matched as whole words (any case) against a paper's title and abstract
+before scoring; matches are dropped at no cost and remembered (candidate status `excluded`) so they are not re-checked. **Topics** are plain words passed to
+the scoring model, which rates papers mainly about them 0-2; this catches papers that never use your keyword. Edit both on **Settings** (`/app/settings`, which
+also lists the latest drops so you can spot a keyword that is too broad), or set fixed host-wide rules under `discovery.exclude_keywords` / `exclude_topics`
+in `config.yaml` (shown read-only on the page). They apply to the general digest only; a project's own `exclude:` field handles that project's searches.
+
 ## Projects (grow a literature review over time)
-A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work. Create one with `litwiki review-new "Title"`, write its question
-and scope, then open **Projects** in the web UI (`/app/projects`) or press *Screen papers for this project* on its wiki page.
+A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work. Create one with **New project** on `/app/projects` (title, question, scope, search terms and exclusions; *Suggest terms* drafts the terms and exclusions
+from your title and question with one small Haiku call), or with `litwiki review-new "Title"` and fill the page in by hand. A project's **Settings** link edits its
+terms, exclusions and active/archived status. Then screen papers from `/app/projects` or the *Screen papers for this project* button on its wiki page.
 `/app/project/<slug>` is a grid of cards for bulk decisions (visually distinct from the swipe view): **In library** (papers you already have that are not
 linked yet), **New** (candidates from the project's searches, see *Literature reviews*) and **Linked**. Tap cards to select them, then **Link to project**
 (free), **Ingest new** (summarises them, about $0.05-0.15 each, and they join the project), **Dismiss new** or **Unlink**. **Analyze** runs a cheap Haiku pass

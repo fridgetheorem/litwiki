@@ -58,6 +58,11 @@ discovery:
   max_per_concept: 15        # raw candidates fetched per concept per source
   digest_max: 15             # max items in a daily digest
   min_score: 6               # triage relevance threshold (0-10)
+  # Topics the general daily digest should not show (projects use their own `exclude:`). These are the host's fixed
+  # rules; the web Settings page adds more. Keywords are whole words matched in title/abstract and dropped before
+  # scoring; topics are plain words given to the scoring model as a negative prompt.
+  exclude_keywords: []
+  exclude_topics: ""
   openalex_mailto: ""        # optional: your email for OpenAlex's polite pool
   # Optional institutional proxy prefix used for links to paywalled items, e.g.
   # "https://login.proxy.lib.example.edu/login?url="
