@@ -1,5 +1,5 @@
 #!/bin/bash
-# Keep Caddy, Syncthing, the web UI and the Discord bot running (no systemd user lingering needed). Run from cron.
+# Keep Caddy, the web UI, the Discord bot and (only if syncthing.enabled) Syncthing running (no systemd user lingering needed). Run from cron.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="$HOME/.local/bin:$PATH"
 L="$ROOT/logs"; mkdir -p "$L"
@@ -10,7 +10,7 @@ if ! pgrep -u "$(id -u)" -x caddy >/dev/null; then
     echo "$(date -Is) starting caddy" >> "$L/watchdog.log"
     nohup caddy run --config "$ROOT/Caddyfile" --adapter caddyfile >> "$L/caddy.out" 2>&1 &
 fi
-if ! pgrep -u "$(id -u)" -x syncthing >/dev/null; then
+if [ "${SYNCTHING_ENABLED:-0}" = 1 ] && ! pgrep -u "$(id -u)" -x syncthing >/dev/null; then
     echo "$(date -Is) starting syncthing" >> "$L/watchdog.log"
     nohup syncthing serve --home "$SYNCTHING_HOME" --no-browser \
         --gui-address="$SYNCTHING_GUI" >> "$L/syncthing.log" 2>&1 &
