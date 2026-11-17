@@ -74,11 +74,16 @@ def _throttled() -> bool:
 
 # ---------- templates ----------
 
+# The one colour palette for every page (light + dark). The two standalone project pages get it injected, so they cannot drift.
+THEME_VARS = (":root{color-scheme:light dark;--bg:#fff;--fg:#1d2330;--mut:#667085;--line:#d9dde5;--acc:#3f51b5;--accfg:#fff;--card:#f6f7fb;"
+              "--ok:#1b7f3b;--bad:#b3261e;--new:#b45309;--lnk:#6d28d9;--sel:#3f51b522}\n"
+              "@media(prefers-color-scheme:dark){:root{--bg:#14161c;--fg:#e4e7ee;--mut:#98a2b3;--line:#2c313c;--acc:#8c9eff;--accfg:#14161c;--card:#1c1f27;"
+              "--ok:#5fd07f;--bad:#ff8a80;--new:#fbbf24;--lnk:#c4b5fd;--sel:#8c9eff26}}")
+
 BASE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ title }} · litwiki</title>
 <style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1d2330;--mut:#667085;--line:#d9dde5;--acc:#3f51b5;--card:#f6f7fb;--ok:#1b7f3b;--bad:#b3261e}
-@media(prefers-color-scheme:dark){:root{--bg:#14161c;--fg:#e4e7ee;--mut:#98a2b3;--line:#2c313c;--acc:#8c9eff;--card:#1c1f27;--ok:#5fd07f;--bad:#ff8a80}}
+__THEME__
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
 nav{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:var(--card)}
 nav a,nav button{color:var(--acc);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}
@@ -99,7 +104,7 @@ table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5
 {% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
-<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
+<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>""".replace("__THEME__", THEME_VARS)
 
 TEMPLATES = {
     "base.html": BASE,
@@ -519,7 +524,7 @@ def project_papers(request: Request) -> Response:
     page = Path(__file__).with_name("project_page.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__TABS__", project_tabs(slug, "papers")),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "papers")),
                         headers={"Cache-Control": "no-store"})
 
 
@@ -789,7 +794,7 @@ def project_notes_get(request: Request) -> Response:
     page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__TABS__", project_tabs(slug, "notes")),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "notes")),
                         headers={"Cache-Control": "no-store"})
 
 
