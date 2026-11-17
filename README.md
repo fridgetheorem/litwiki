@@ -164,7 +164,8 @@ paper) is removed and the answer says how many were dropped; a quote found on a 
 `Author Year, p. N` linking to that page of the PDF (page numbers are PDF page numbers, which can differ from the numbers printed on the page).
 Only papers with a PDF that has selectable text are searched (web snapshots and abstract-only pages are not; the page lists what was skipped). One paper that fits
 `llm.max_text_chars` is sent whole; otherwise TF-IDF picks the passages closest to your question (at most 5 per paper in a project). Each paper and project keeps its own
-conversation (stored in `state.db`), and follow-up questions see the last few turns. Text is extracted from each PDF once and cached in `state/text/` (the first question
+conversations (stored in `state.db`) as **threads**: the side panel lists every question, click one to jump to its answer, and **+ New thread** starts a conversation that
+sees none of the earlier ones. Follow-ups see only the last few turns of their own thread. Text is extracted from each PDF once and cached in `state/text/` (the first question
 over a new set of papers is slower). Cost is roughly $0.05-0.15 per question, under its own daily cap `budget.chat_daily_usd`.
 
 ## Concepts
