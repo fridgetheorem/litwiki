@@ -48,6 +48,7 @@ llm:
 
 budget:                      # enforced from the cost reported by each call (requires ANTHROPIC_API_KEY, see README)
   ask_daily_usd: 3.0         # separate cap on library questions (each ≈ $0.15-0.30)
+  chat_daily_usd: 3.0        # separate cap on paper/project chat (each question ≈ $0.05-0.15)
   monthly_usd: 50.0          # hard stop for all LLM calls
   warn_fraction: 0.8         # notify once when month spend crosses this
   daily_usd: 5.0             # hard stop for the day + notify (anomaly guard)

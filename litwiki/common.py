@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS cite_meta (
     fetched TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS notified (k TEXT PRIMARY KEY, ts TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,           -- 'paper:<stem>' or 'project:<slug>'
+    ts TEXT DEFAULT (datetime('now')),
+    role TEXT NOT NULL,            -- user | assistant
+    status TEXT DEFAULT 'done',    -- running | done | error (assistant rows)
+    text TEXT DEFAULT '',          -- the question, or the answer as safe HTML
+    data TEXT DEFAULT '{}'         -- JSON: verified quotes, cost, notes
+);
+CREATE INDEX IF NOT EXISTS chat_scope ON chat_messages(scope, id);
 """
 
 
