@@ -42,7 +42,8 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}button
 #toast{position:fixed;left:50%;bottom:5rem;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:.5rem 1rem;border-radius:8px;display:none;z-index:9;max-width:90vw}
 </style></head><body>
 <header>
-<div class="top"><a href="/app/projects">← Projects</a><h1 id="title"></h1><span class="sp"></span><a id="pg" href="#">Project page</a><a id="nt" href="#">Notes</a><a href="/app/swipe">Swipe</a></div>
+<div class="top"><a href="/app/projects">← Projects</a><h1 id="title"></h1><span class="sp"></span><a href="/app/swipe">Swipe</a></div>
+__TABS__
 <div class="tools">
 <div class="seg" id="seg"></div>
 <input id="q" type="search" placeholder="Filter titles and abstracts">
@@ -68,7 +69,7 @@ let cards=D.cards,sel=new Set(),view=sessionStorageGet("view")||"library",sortBy
 function sessionStorageGet(k){try{return sessionStorage.getItem("proj:"+k)}catch(_){return null}}
 function sessionStorageSet(k,v){try{sessionStorage.setItem("proj:"+k,v)}catch(_){}}
 const $=id=>document.getElementById(id),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
-$("title").textContent=D.title;$("pg").href=D.page_url;$("nt").href=BASE+"/notes";
+$("title").textContent=D.title;
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",5000)}
 async function post(path,params){
   const body=new URLSearchParams({_csrf:CSRF});for(const[k,v] of Object.entries(params||{}))(Array.isArray(v)?v:[v]).forEach(x=>body.append(k,x));

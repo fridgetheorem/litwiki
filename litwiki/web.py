@@ -181,35 +181,32 @@ TEMPLATES = {
 It runs in the background and the page updates when the site rebuilds (about a minute).</span></p></form>
 {% endblock %}""",
     "projects.html": """{% extends "base.html" %}{% block body %}<h1>Projects</h1>
-<p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Edit the question and scope on its page in Obsidian, or the search terms here.</p>
+<p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Open one to edit its question, scope and search terms, run a search, and work with its papers and notes.</p>
 <p><a class="b" href="/app/projects/new">New project</a></p>
 {% if not projects %}<p class="mut">No projects yet.</p>{% endif %}
 {% for p in projects %}<div class="card"><b><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></b>
 <div class="mut">{{ p.linked }} linked paper(s) · {{ p.waiting }} new candidate(s) waiting · {{ p.terms }} search term(s)</div>
-<div><a href="/app/project/{{ p.slug }}">Screen papers</a> · <a href="/reviews/{{ p.slug }}/">Project page</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a> · <a href="/app/project/{{ p.slug }}/settings">Settings</a></div>
+<div><a href="/app/project/{{ p.slug }}">Overview</a> · <a href="/app/project/{{ p.slug }}/papers">Papers</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a> · <a href="/reviews/{{ p.slug }}/">Wiki page</a></div>
 <form method="post" action="/app/project/{{ p.slug }}/daily" style="margin-top:.4rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b {{ 'sec' if p.daily else '' }}">{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button>
 <span class="mut">{% if p.status != 'active' %}archived projects are skipped{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span></form></div>{% endfor %}{% endblock %}""",
     "project_form.html": """{% extends "base.html" %}{% block body %}
 <p><a href="/app/projects">← Projects</a></p>
-<h1>{% if mode == 'new' %}New project{% else %}Settings: {{ f.title }}{% endif %}</h1>
+<h1>New project</h1>
 <form method="post" action="{{ action }}" class="card" id="pf"><input type="hidden" name="_csrf" value="{{ csrf }}">
-{% if mode == 'new' %}<label for="title">Title</label><input id="title" type="text" name="title" value="{{ f.title }}" maxlength="120" required autofocus>
+<label for="title">Title</label><input id="title" type="text" name="title" value="{{ f.title }}" maxlength="120" required autofocus>
 <label for="question">Research question <span class="mut">(what is this review trying to find out?)</span></label>
 <textarea id="question" name="question" rows="3">{{ f.question }}</textarea>
 <label for="scope">Scope <span class="mut">(what is in, and what is out; candidates are scored against this)</span></label>
-<textarea id="scope" name="scope" rows="3">{{ f.scope }}</textarea>{% endif %}
+<textarea id="scope" name="scope" rows="3">{{ f.scope }}</textarea>
 <label for="terms">Search terms <span class="mut">(one per line, 1-4 words each; searched on arXiv and OpenAlex)</span></label>
 <textarea id="terms" name="terms" rows="7">{{ f.terms }}</textarea>
 <label for="exclude">Exclusions <span class="mut">(topics or paper types to score down, in plain words)</span></label>
 <textarea id="exclude" name="exclude" rows="2">{{ f.exclude }}</textarea>
-{% if mode == 'new' %}<p><button type="button" class="b sec" id="suggest">Suggest terms</button>
+<p><button type="button" class="b sec" id="suggest">Suggest terms</button>
 <span class="mut" id="smsg">Fills the two boxes above from your title and question (one small LLM call, about a cent). You can edit the result.</span></p>
-{% else %}<label for="status">Status</label><select id="status" name="status">
-<option value="active"{% if f.status == 'active' %} selected{% endif %}>active</option>
-<option value="archived"{% if f.status == 'archived' %} selected{% endif %}>archived (skipped by the daily run)</option></select>{% endif %}
-<p><button class="b">{% if mode == 'new' %}Create project{% else %}Save settings{% endif %}</button></p></form>
-{% if mode == 'new' %}<script>
+<p><button class="b">Create project</button></p></form>
+<script>
 const q=s=>document.querySelector(s), btn=q('#suggest');
 btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
  try{const body=new URLSearchParams({_csrf:q('input[name=_csrf]').value,title:q('#title').value,question:q('#question').value,scope:q('#scope').value});
@@ -217,7 +214,36 @@ btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
   if(!r.ok)throw new Error(j.error||r.status);
   q('#terms').value=j.terms.join('\\n'); q('#exclude').value=j.exclude; q('#smsg').textContent='Suggested: edit freely before creating.';
  }catch(e){q('#smsg').textContent='Could not suggest: '+e.message;} btn.disabled=false;};
-</script>{% endif %}{% endblock %}""",
+</script>{% endblock %}""",
+    "project_overview.html": """{% extends "base.html" %}{% block body %}
+<p><a href="/app/projects">← Projects</a></p><h1>{{ f.title }}</h1>{{ tabs|safe }}
+<p class="mut">{{ linked }} linked paper(s){% if f.status != 'active' %} · <b>archived</b> (skipped by the daily run){% endif %}.
+Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>; keep free-form thoughts under <a href="/app/project/{{ slug }}/notes">Notes</a>.</p>
+<form method="post" action="/app/project/{{ slug }}/overview" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="version" value="{{ f.version }}">
+<label for="question">Research question <span class="mut">(what is this review trying to find out?)</span></label>
+<textarea id="question" name="question" rows="3">{{ f.question }}</textarea>
+<label for="scope">Scope <span class="mut">(what is in, and what is out; candidates are scored against this text)</span></label>
+<textarea id="scope" name="scope" rows="5">{{ f.scope }}</textarea>
+<div class="row"><div><label for="terms">Search terms <span class="mut">(one per line, 1-4 words)</span></label>
+<textarea id="terms" name="terms" rows="7">{{ f.terms_text }}</textarea></div>
+<div><label for="exclude">Exclusions <span class="mut">(scored down, in plain words)</span></label>
+<textarea id="exclude" name="exclude" rows="3">{{ f.exclude }}</textarea>
+<label for="status">Status</label><select id="status" name="status">
+<option value="active"{% if f.status == 'active' %} selected{% endif %}>active</option>
+<option value="archived"{% if f.status == 'archived' %} selected{% endif %}>archived (skipped by the daily run)</option></select></div></div>
+<p><button class="b">Save</button> <span class="mut">Changes the wiki page too (its other content is left alone).</span></p></form>
+<h2>Searching</h2>
+<div class="card">
+<form method="post" action="/app/project/{{ slug }}/search" style="display:inline"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<button class="b" id="srch"{% if searching %} disabled{% endif %}>Run search now</button></form>
+<span class="mut" id="smsg">{% if searching %}Searching…{% elif search_rc == 0 %}Last search finished. New candidates are under <a href="/app/project/{{ slug }}/papers">Papers → New</a>.{% elif search_rc %}Last search failed (see logs/web-jobs.log).{% else %}Searches arXiv and OpenAlex with the terms above and scores the results (a few cents). Saved changes to the terms apply.{% endif %}</span>
+<form method="post" action="/app/project/{{ slug }}/daily" style="margin-top:.6rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="back" value="/app/project/{{ slug }}"><input type="hidden" name="on" value="{{ '0' if f.daily else '1' }}">
+<button class="b {{ 'sec' if f.daily else '' }}">{{ 'Daily digest: ON (turn off)' if f.daily else 'Turn on daily digest' }}</button>
+<span class="mut">{% if f.status != 'active' %}archived projects are skipped{% elif f.daily %}searched every day, recent papers only{% else %}manual searches only{% endif %}</span></form></div>
+{% if searching %}<script>(function p(){fetch('/app/project/{{ slug }}/search-status').then(r=>r.json()).then(j=>{if(j.running)setTimeout(p,5000);else location.reload()}).catch(()=>setTimeout(p,10000))})()</script>{% endif %}
+{% endblock %}""",
     "settings.html": """{% extends "base.html" %}{% block body %}<h1>Settings</h1>
 <h2>Daily digest: excluded topics</h2>
 <p class="mut">The general daily digest skips these. (Projects have their own exclusions under Projects → Settings.)
@@ -459,7 +485,7 @@ def _project_or_404(request: Request):
         return slug, None
 
 
-def project_get(request: Request) -> Response:
+def project_papers(request: Request) -> Response:
     """Grid of cards for bulk screening: library papers, new candidates and linked papers of one project."""
     slug, rv = _project_or_404(request)
     if rv is None:
@@ -469,7 +495,8 @@ def project_get(request: Request) -> Response:
     page = Path(__file__).with_name("project_page.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob), headers={"Cache-Control": "no-store"})
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__TABS__", project_tabs(slug, "papers")),
+                        headers={"Cache-Control": "no-store"})
 
 
 async def project_cards(request: Request) -> Response:
@@ -529,7 +556,9 @@ async def project_daily(request: Request) -> Response:
         return HTMLResponse("No such project.", status_code=404)
     on = str(request.state.form.get("on", "")) == "1"
     await run_in_threadpool(project.set_daily, CFG, slug, on)
-    return redirect("/app/projects", f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
+    back = str(request.state.form.get("back", ""))
+    back = back if back.startswith("/app/project/") else "/app/projects"
+    return redirect(back, f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
 
 
 def _exclusion_page(request: Request, f=None, status: int = 200, flash=None) -> Response:
@@ -568,7 +597,7 @@ async def project_new_post(request: Request) -> Response:
         return render(request, "project_form.html", status=400, title="New project", mode="new",
                       action="/app/projects/new", f=f, flash={"msg": str(e), "kind": "err"})
     request_build()  # so /reviews/<slug>/ exists
-    return redirect(f"/app/project/{slug}", f"Created project '{f['title']}'. Screen papers to link or find some.")
+    return redirect(f"/app/project/{slug}", f"Created project '{f['title']}'. Run a search, or link papers you already have under Papers.")
 
 
 async def project_suggest(request: Request) -> Response:
@@ -584,32 +613,72 @@ async def project_suggest(request: Request) -> Response:
     return JSONResponse(out)
 
 
-def _settings_form(rv: dict) -> dict:
-    return {"title": rv["title"], "terms": "\n".join(rv.get("search_terms") or []),
-            "exclude": rv.get("exclude") or "", "status": str(rv.get("status", "active"))}
+TABS_CSS = ("<style>.ptabs{display:flex;gap:1.1rem;padding:0 1rem;border-bottom:1px solid var(--line);font-size:.95rem;flex-wrap:wrap}"
+            ".ptabs a{padding:.5rem 0;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}"
+            ".ptabs a.on{color:var(--fg);border-bottom-color:var(--acc,var(--ink,currentColor));font-weight:600}.ptabs .sp{flex:1}</style>")
 
 
-def project_settings_get(request: Request) -> Response:
+def project_tabs(slug: str, active: str) -> str:
+    """The tab bar shared by a project's pages (also injected into the two standalone pages)."""
+    base = f"/app/project/{quote(slug)}"
+    tabs = [("overview", "Overview", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes")]
+    links = "".join(f'<a href="{href}"{" class=on" if key == active else ""}>{label}</a>' for key, label, href in tabs)
+    return f'{TABS_CSS}<nav class="ptabs">{links}<span class="sp"></span><a href="/reviews/{quote(slug)}/">Wiki page ↗</a></nav>'
+
+
+def _overview_page(request: Request, slug: str, f: dict, status: int = 200, flash=None) -> Response:
+    f = {**f, "terms_text": "\n".join(f["terms"]) if isinstance(f["terms"], list) else f["terms"]}
+    run = project.SEARCHES.get(slug, {"running": False, "rc": None})
+    return render(request, "project_overview.html", status=status, title=f["title"], slug=slug, f=f, flash=flash,
+                  tabs=project_tabs(slug, "overview"), searching=run["running"], search_rc=run["rc"],
+                  linked=len(project.linked_papers(CFG, slug)))
+
+
+def project_overview_get(request: Request) -> Response:
     slug, rv = _project_or_404(request)
     if rv is None:
         return HTMLResponse("No such project.", status_code=404)
-    return render(request, "project_form.html", title=f"Settings: {rv['title']}", mode="edit",
-                  action=f"/app/project/{slug}/settings", f=_settings_form(rv))
+    return _overview_page(request, slug, project.read_overview(CFG, slug))
 
 
-async def project_settings_post(request: Request) -> Response:
+async def project_overview_post(request: Request) -> Response:
     slug, rv = _project_or_404(request)
     if rv is None:
         return HTMLResponse("No such project.", status_code=404)
     form = request.state.form
+    posted = {k: str(form.get(k, "")) for k in ("question", "scope", "terms", "exclude", "status", "version")}
     try:
-        await run_in_threadpool(project.update_settings, CFG, slug, str(form.get("terms", "")),
-                                str(form.get("exclude", "")), str(form.get("status", "active")))
+        await run_in_threadpool(project.save_overview, CFG, slug, posted["question"], posted["scope"], posted["terms"],
+                                posted["exclude"], posted["status"], posted["version"])
+    except (notes.Conflict, project.ProjectError) as e:
+        cur = project.read_overview(CFG, slug)
+        msg = ("This project was changed somewhere else (another tab, or an edit to its page) since you opened it. "
+               "Your edits are kept below; saving again overwrites that change.") if isinstance(e, notes.Conflict) else str(e)
+        mine = {**cur, "question": posted["question"], "scope": posted["scope"], "terms": project.clean_terms(posted["terms"]),
+                "exclude": posted["exclude"], "status": posted["status"] if posted["status"] in ("active", "archived") else cur["status"]}
+        return _overview_page(request, slug, mine, status=409 if isinstance(e, notes.Conflict) else 400,
+                              flash={"msg": msg, "kind": "err"})
+    request_build()  # the wiki page shows the question and scope
+    return redirect(f"/app/project/{slug}", "Saved.")
+
+
+async def project_search(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    try:
+        started = await run_in_threadpool(project.start_search, CFG, slug)
     except project.ProjectError as e:
-        return render(request, "project_form.html", status=400, title=f"Settings: {rv['title']}", mode="edit",
-                      action=f"/app/project/{slug}/settings", f={**_settings_form(rv), "exclude": str(form.get("exclude", ""))},
-                      flash={"msg": str(e), "kind": "err"})
-    return redirect("/app/projects", f"Saved settings for {rv['title']}.")
+        return redirect(f"/app/project/{slug}", str(e), "err")
+    return redirect(f"/app/project/{slug}", "Search started." if started else "A search is already running for this project.",
+                    "ok" if started else "err")
+
+
+def project_search_status(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    return JSONResponse(project.SEARCHES.get(slug, {"running": False, "rc": None}))
 
 
 def project_notes_get(request: Request) -> Response:
@@ -623,7 +692,8 @@ def project_notes_get(request: Request) -> Response:
     page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob), headers={"Cache-Control": "no-store"})
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__TABS__", project_tabs(slug, "notes")),
+                        headers={"Cache-Control": "no-store"})
 
 
 async def project_notes_post(request: Request) -> Response:
@@ -838,9 +908,11 @@ def create_app(cfg) -> Starlette:
         Route("/app/projects/new", guard(project_new_get), methods=["GET"]),
         Route("/app/projects/new", guard(project_new_post), methods=["POST"]),
         Route("/app/projects/suggest", guard(project_suggest), methods=["POST"]),
-        Route("/app/project/{slug}/settings", guard(project_settings_get), methods=["GET"]),
-        Route("/app/project/{slug}/settings", guard(project_settings_post), methods=["POST"]),
-        Route("/app/project/{slug}", guard(project_get), methods=["GET"]),
+        Route("/app/project/{slug}/overview", guard(project_overview_post), methods=["POST"]),
+        Route("/app/project/{slug}/search", guard(project_search), methods=["POST"]),
+        Route("/app/project/{slug}/search-status", guard(project_search_status), methods=["GET"]),
+        Route("/app/project/{slug}", guard(project_overview_get), methods=["GET"]),
+        Route("/app/project/{slug}/papers", guard(project_papers), methods=["GET"]),
         Route("/app/project/{slug}/cards", guard(project_cards), methods=["GET"]),
         Route("/app/project/{slug}/status", guard(project_status), methods=["GET"]),
         Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),

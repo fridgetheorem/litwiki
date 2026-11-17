@@ -45,7 +45,7 @@ def create_review(vault: Path, title: str, question: str = "", scope: str = "",
         "since_year": date.today().year - 5,
         "max_per_term": 100,         # candidates fetched per term per source
         "exclude": exclude,          # topics / paper types to score down, in plain words
-        "run": False,                # set to true in Obsidian to run a search at the next hourly job
+        "run": False,                # true = run a search at the next hourly job (the web app's "Run search now" does it immediately)
         "daily": False,              # true = also search this project every day (recent papers only) and write a digest
         "status": "active",          # active | archived (archived projects are skipped by the daily run)
         "created": date.today().isoformat(),
@@ -53,9 +53,8 @@ def create_review(vault: Path, title: str, question: str = "", scope: str = "",
     q = question.strip() or "_What is this review trying to find out?_"
     sc = scope.strip() or "_What is in scope, and what is not. Candidates are scored against this text._"
     body = (f"# {title}\n\n## Research question\n\n{q}\n\n## Scope\n\n{sc}\n\n"
-            f"## How to use\n\nFill in `search_terms` above, then set `run: true` (or run `litwiki search {slug}`). "
-            f"A digest appears under `digests/`; tick items to ingest them. Papers ingested from it are tagged "
-            f"`#review/{slug}`.\n")
+            "## How to use\n\nOpen this project in the web app (Projects) to edit the question, scope and search terms, run a search, "
+            "screen candidates and link papers. Papers ingested for it are tagged `#review/" + slug + "`.\n")
     write_page(path, fm, body)
     return slug
 

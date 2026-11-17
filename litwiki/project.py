@@ -5,13 +5,16 @@ library papers to a project, builds the pool of candidates for the bulk-screenin
 the project + new papers found by the project's searches), and runs a cheap Haiku pass that scores each candidate
 against the project and says, in a few bullets, how it relates. Results are cached per project so reopening the
 page costs nothing."""
+import hashlib
 import json
 import re
+import subprocess
+import sys
 import threading
 from datetime import datetime, timezone
 
 from . import vault
-from .common import db, log, read_page, replace_block, write_page
+from .common import LOG_DIR, ROOT, db, log, read_page, replace_block, write_page
 from .notes import Conflict
 
 STEM = re.compile(r"^[\w.\-]+$")
@@ -325,16 +328,84 @@ def create(cfg, title: str, question: str = "", scope: str = "", terms=(), exclu
     return slug
 
 
-def update_settings(cfg, slug: str, terms, exclude: str, status: str) -> None:
-    """Edit a project's search terms, exclusions and active/archived status (frontmatter only; the body is yours)."""
+_PLACEHOLDERS = {"Research question": "_What is this review trying to find out?_",
+                 "Scope": "_What is in scope, and what is not. Candidates are scored against this text._"}
+
+
+def _section_rx(name: str):
+    return re.compile(rf"(^## {re.escape(name)}[ \t]*\n)(.*?)(?=^## |\Z)", re.M | re.S)
+
+
+def _section(body: str, name: str) -> str:
+    m = _section_rx(name).search(body)
+    text = m.group(2).strip() if m else ""
+    return "" if text == _PLACEHOLDERS[name] else text
+
+
+def _set_section(body: str, name: str, text: str) -> str:
+    # A heading typed inside the text would split the section, so demote any level-1/2 heading to level 3.
+    text = re.sub(r"^#{1,2}(?=\s)", "###", text.replace("\r\n", "\n").strip(), flags=re.M) or _PLACEHOLDERS[name]
+    block = f"## {name}\n\n{text}\n\n"
+    rx = _section_rx(name)
+    if rx.search(body):
+        return rx.sub(lambda _m: block, body, count=1)
+    return body.rstrip("\n") + "\n\n" + block
+
+
+def _version(question: str, scope: str, terms: list, exclude: str, status: str) -> str:
+    """Identifies the editable content. Linking a paper also rewrites the page, so a file mtime would report false
+    conflicts; this only changes when one of the fields the form edits changes."""
+    return hashlib.sha1(json.dumps([question, scope, terms, exclude, status]).encode()).hexdigest()[:16]
+
+
+def read_overview(cfg, slug: str) -> dict:
+    """Everything the project's Overview form edits, plus the version token the save is checked against."""
     rv = get(cfg, slug)
+    _, body = read_page(rv["path"])
+    q, sc = _section(body, "Research question"), _section(body, "Scope")
+    terms, exclude, status = list(rv.get("search_terms") or []), str(rv.get("exclude") or ""), str(rv.get("status", "active"))
+    return {"title": rv["title"], "question": q, "scope": sc, "terms": terms, "exclude": exclude, "status": status,
+            "daily": rv.get("daily") is True, "version": _version(q, sc, terms, exclude, status)}
+
+
+def save_overview(cfg, slug: str, question: str, scope: str, terms, exclude: str, status: str, expected_version: str) -> str:
+    """Save the Overview form; frontmatter and the two text sections only, the rest of the page is untouched.
+    Raises notes.Conflict if those fields changed since the form was loaded. Returns the new version."""
     if status not in ("active", "archived"):
         raise ProjectError("Status must be active or archived.")
+    cur = read_overview(cfg, slug)
+    if cur["version"] != expected_version:
+        raise Conflict()
+    rv = get(cfg, slug)
     fm, body = read_page(rv["path"])
     fm["search_terms"] = clean_terms(terms)
     fm["exclude"] = " ".join(exclude.split())[:1000]
     fm["status"] = status
+    body = _set_section(_set_section(body, "Research question", question[:4000]), "Scope", scope[:4000])
     write_page(rv["path"], fm, body)
+    return read_overview(cfg, slug)["version"]
+
+
+SEARCHES: dict[str, dict] = {}   # slug -> {"running", "rc"} for searches started from the web (this process only)
+
+
+def start_search(cfg, slug: str) -> bool:
+    """Run the project's full search now (what `run: true` did in Obsidian) as a detached job; False if one is running.
+    The job waits for the pipeline lock, searches arXiv + OpenAlex, triages with the cheap model and writes a digest."""
+    if not get(cfg, slug).get("search_terms"):
+        raise ProjectError("Add search terms first.")
+    if SEARCHES.get(slug, {}).get("running"):
+        return False
+    SEARCHES[slug] = {"running": True, "rc": None}
+    out = open(LOG_DIR / "web-jobs.log", "a")
+    p = subprocess.Popen([sys.executable, "-m", "litwiki.cli", "search", slug], stdout=out, stderr=out,
+                         stdin=subprocess.DEVNULL, start_new_session=True, cwd=ROOT)
+    out.close()
+
+    def wait():
+        SEARCHES[slug] = {"running": False, "rc": p.wait()}
+    threading.Thread(target=wait, daemon=True).start()
+    return True
 
 
 SUGGEST_SYSTEM = """You help a researcher set up the automatic literature search for a new project (a literature review).
