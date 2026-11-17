@@ -125,6 +125,7 @@ linked yet), **New** (candidates from the project's searches, see *Literature re
 (about $0.002 per 12 papers, so a whole library costs a few cents) that gives each card a 0-10 *fit* score and 2-3 bullets on how it relates to the project;
 results are cached, so reopening the page costs nothing.
 - **Notes** (`/app/project/<slug>/notes`): the free-form whiteboard, described below.
+- **Chat** (`/app/project/<slug>/chat`): ask questions about the project's linked papers and get answers backed by direct quotes (see *Chat with quotes*).
 
 **Daily project digests.** Press *Turn on daily digest* on the project's Overview (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it). After the
 global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
@@ -154,6 +155,17 @@ the page); appends the dropped pages' notes; rewrites `[[links]]` to the dropped
 and fixes the concept pages' paper lists. The kept page's body is not rewritten. New Zotero items that duplicate an existing page are
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
+
+## Chat with quotes
+Ask questions about one paper (`/app/paper/<stem>/chat`, linked from the paper's wiki page and the web Papers list) or about all the papers linked to a project
+(the project's **Chat** tab). The model must support every claim with exact quotes, and **the server checks each quote against the paper's own text**: case,
+punctuation, ligatures and line-break hyphenation are ignored, but every word must be there in order. A quote it cannot find (invented, extended, paraphrased, from the wrong
+paper) is removed and the answer says how many were dropped; a quote found on a different page than the model claimed is re-pointed to the right one. Each quote shows
+`Author Year, p. N` linking to that page of the PDF (page numbers are PDF page numbers, which can differ from the numbers printed on the page).
+Only papers with a PDF that has selectable text are searched (web snapshots and abstract-only pages are not; the page lists what was skipped). One paper that fits
+`llm.max_text_chars` is sent whole; otherwise TF-IDF picks the passages closest to your question (at most 5 per paper in a project). Each paper and project keeps its own
+conversation (stored in `state.db`), and follow-up questions see the last few turns. Text is extracted from each PDF once and cached in `state/text/` (the first question
+over a new set of papers is slower). Cost is roughly $0.05-0.15 per question, under its own daily cap `budget.chat_daily_usd`.
 
 ## Concepts
 `/app/concepts` lists the topics papers are filed under. Open one to edit its title, description, aliases, search terms, arXiv categories, whether the daily digest

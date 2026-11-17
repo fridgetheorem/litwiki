@@ -95,6 +95,8 @@ def _with_notes(markdown: str, here: str, config, meta: dict | None = None) -> s
         pass
     label = "Edit notes" if note else "Add notes"
     attach = f" [Attach PDF](/app/attach/{stem}){{ .md-button }}" if (meta or {}).get("needs_pdf") else ""
+    if str((meta or {}).get("pdf") or "").lower().endswith(".pdf"):
+        attach += f" [Chat about this paper](/app/paper/{stem}/chat){{ .md-button }}"
     return (markdown.rstrip() + "\n\n## Notes (web)\n\n" + (note + "\n\n" if note else "")
             + f"[{label}](/app/notes/{stem}){{ .md-button }}{attach}\n")
 
@@ -134,7 +136,7 @@ def on_page_markdown(markdown: str, page, config, files):
             pass
         markdown = (markdown.rstrip() + "\n\n## Notes\n\n" + (note + "\n\n" if note else "")
                     + f"[{'Edit notes' if note else 'Add notes'}](/app/project/{slug}/notes){{ .md-button }} "
-                    + f"[Screen papers for this project](/app/project/{slug}){{ .md-button }}\n")
+                    + f"[Open project](/app/project/{slug}){{ .md-button }} [Chat about its papers](/app/project/{slug}/chat){{ .md-button }}\n")
     if here.startswith("papers/"):
         markdown = _with_bib(markdown, here)
         markdown = _with_citations(markdown, here)

@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -22,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import ask as askmod, concept, exclusions, manual, notes, project, swipe, vault
+from . import ask as askmod, chat, concept, exclusions, manual, notes, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -153,7 +154,7 @@ TEMPLATES = {
     "papers.html": """{% extends "base.html" %}{% block body %}<h1>Papers</h1>
 <form method="get" action="/app/papers"><input type="text" name="q" value="{{ q }}" placeholder="Search titles / authors" autofocus></form>
 <table>{% for p in papers %}<tr><td><a href="/papers/{{ p.stem }}/">{{ p.title }}</a><div class="mut">{{ p.authors }} {{ p.year }}</div></td>
-<td><a href="/app/notes/{{ p.stem }}">{% if p.has_note %}Edit notes{% else %}Add notes{% endif %}</a></td></tr>{% endfor %}</table>
+<td><a href="/app/notes/{{ p.stem }}">{% if p.has_note %}Edit notes{% else %}Add notes{% endif %}</a>{% if p.chat %} · <a href="/app/paper/{{ p.stem }}/chat">Chat</a>{% endif %}</td></tr>{% endfor %}</table>
 {% if more %}<p class="mut">Showing the first {{ papers|length }}; refine the search.</p>{% endif %}{% endblock %}""",
     "ask.html": """{% extends "base.html" %}{% block body %}<h1>Ask the library</h1>
 <form method="post" action="/app/ask" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -273,6 +274,88 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <label for="overview">Overview <span class="mut">(your synthesis; markdown. The paper list below it is maintained by litwiki)</span></label>
 <textarea id="overview" name="overview" rows="10">{{ f.overview }}</textarea>{% endif %}
 <p><button class="b">{% if mode == 'new' %}Create concept{% else %}Save{% endif %}</button></p></form>{% endblock %}""",
+    "chat_panel.html": """<div id="chat" data-scope="{{ scope }}" data-csrf="{{ csrf }}">
+<div id="msgs" aria-live="polite"></div>
+<form id="cf"><textarea id="cq" rows="2" placeholder="{{ placeholder }}" maxlength="2000"></textarea>
+<div class="crow"><button class="b" id="cs">Ask</button><span class="mut" id="chint">Enter to send, Shift+Enter for a new line.</span></div></form></div>
+<style>
+#chat{display:flex;flex-direction:column;gap:.8rem}#msgs{display:flex;flex-direction:column;gap:.7rem}
+.m{border:1px solid var(--line);border-radius:10px;padding:.6rem .9rem;max-width:100%}.m.u{background:var(--card);align-self:flex-end;max-width:85%;white-space:pre-wrap}
+.m.a{background:var(--bg)}.m.err{border-color:var(--bad);color:var(--bad)}.m .ans p{margin:.4rem 0}.m .ans{overflow-wrap:anywhere}
+.cite{color:var(--acc);text-decoration:none;font-weight:600}.qs{margin:.6rem 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.qs li{border-left:3px solid var(--acc);padding:.2rem .6rem;background:var(--card);border-radius:0 6px 6px 0;font-size:.92rem}
+.qs q{font-style:normal}.qs q:before,.qs q:after{content:'"'}.qs .src{display:block;color:var(--mut);font-size:.85rem;margin-top:.15rem}
+.qs li:target{outline:2px solid var(--acc)}.note{color:var(--mut);font-size:.85rem;margin-top:.4rem}
+#chat textarea{resize:vertical}.crow{display:flex;gap:.7rem;align-items:center;margin-top:.4rem}
+</style>
+<script>
+(function(){
+const root=document.getElementById("chat"),scope=root.dataset.scope,csrf=root.dataset.csrf,msgs=document.getElementById("msgs");
+const q=document.getElementById("cq"),btn=document.getElementById("cs"),hint=document.getElementById("chint");
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+let last=0,timer=null,busy=false;
+function setBusy(b){busy=b;btn.disabled=b;hint.textContent=b?"Reading the papers… the first question can take a minute while text is extracted.":"Enter to send, Shift+Enter for a new line."}
+function bubble(m){
+  const d=m.data||{};
+  if(m.role==="user"){const e=el("div","m u",m.text);e.dataset.id=m.id;return e}
+  const e=el("div","m a");e.dataset.id=m.id;
+  if(m.status==="running"){e.textContent="Thinking…";e.classList.add("run");return e}
+  if(m.status==="error"){e.className="m a err";e.textContent=m.text;return e}
+  const ans=el("div","ans");ans.innerHTML=m.text;   // server-escaped markdown; the only markup is the cite links
+  ans.querySelectorAll("a.cite").forEach(a=>{a.href="#c"+m.id+"-"+a.textContent.replace(/\D/g,"")});
+  e.append(ans);
+  if((d.quotes||[]).length){
+    const ol=el("ol","qs");
+    d.quotes.forEach(x=>{
+      const li=el("li");li.id="c"+m.id+"-"+x.n;
+      const body=el("q");body.textContent=x.quote;
+      const src=el("span","src");src.append("["+x.n+"] ");
+      const a=el("a",null,x.label+", p. "+x.page);a.href=x.pdf;a.target="_blank";a.rel="noopener";src.append(a);
+      src.append(" · ");const w=el("a",null,"paper page");w.href=x.wiki;src.append(w);
+      li.append(body,src);ol.append(li)});
+    e.append(ol)}
+  const notes=[];
+  if(d.dropped)notes.push(d.dropped+" quote"+(d.dropped>1?"s":"")+" could not be found in the paper"+(d.n_papers>1?"s":"")+" and "+(d.dropped>1?"were":"was")+" removed.");
+  if((d.skipped||[]).length)notes.push(d.skipped.length+" paper"+(d.skipped.length>1?"s":"")+" without readable PDF text "+(d.skipped.length>1?"were":"was")+" not searched.");
+  if(d.cost)notes.push("$"+d.cost.toFixed(3));
+  if(notes.length)e.append(el("div","note",notes.join(" · ")));
+  return e}
+function put(m){const old=msgs.querySelector('[data-id="'+m.id+'"]');const b=bubble(m);if(old)old.replaceWith(b);else msgs.append(b);if(m.id>last)last=m.id;return b}
+async function load(first){
+  const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");
+  const j=await r.json();msgs.textContent="";last=0;(j.messages||[]).forEach(put);
+  if((j.messages||[]).some(m=>m.status==="running")){setBusy(true);poll()}
+  if(first)window.scrollTo(0,document.body.scrollHeight)}
+function poll(){clearTimeout(timer);timer=setTimeout(async()=>{
+  try{const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");const j=await r.json();
+    (j.messages||[]).forEach(put);
+    if((j.messages||[]).some(m=>m.status==="running")){poll()}else{setBusy(false)}
+  }catch(e){poll()}},2500)}
+async function send(){
+  const text=q.value.trim();if(!text||busy)return;setBusy(true);
+  const body=new URLSearchParams({_csrf:csrf,scope,question:text});
+  try{const r=await fetch("/app/chat/send",{method:"POST",body});const j=await r.json();
+    if(!r.ok){setBusy(false);const e=el("div","m a err",j.error||("Error "+r.status));msgs.append(e);return}
+    q.value="";await load(false);poll();window.scrollTo(0,document.body.scrollHeight)
+  }catch(e){setBusy(false);msgs.append(el("div","m a err","Could not reach the server: "+e.message))}}
+document.getElementById("cf").addEventListener("submit",ev=>{ev.preventDefault();send()});
+q.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&!ev.shiftKey){ev.preventDefault();send()}});
+load(true).catch(e=>msgs.append(el("div","m a err","Could not load the conversation: "+e.message)));
+})();
+</script>""",
+    "project_chat.html": """{% extends "base.html" %}{% block body %}
+<p><a href="/app/projects">← Projects</a></p><h1>{{ title_ }}</h1>{{ tabs|safe }}
+<p class="mut">Ask about the {{ n_pdf }} linked paper(s) with a PDF. Every answer is backed by quotes copied from the papers and checked by the server;
+anything it cannot find is removed. Page numbers are PDF page numbers.
+{% if skipped %}<br>Not searched (no PDF): {{ skipped|join('; ') }}.{% endif %}</p>
+{% if n_pdf %}{% include "chat_panel.html" %}{% else %}<div class="card">No linked paper has a PDF yet. Link papers under <a href="/app/project/{{ slug }}/papers">Papers</a>,
+or attach PDFs to the ones you have.</div>{% endif %}{% endblock %}""",
+    "paper_chat.html": """{% extends "base.html" %}{% block body %}
+<p><a href="/papers/{{ stem }}/">← {{ paper_title }}</a>{% if pdf %} · <a href="/{{ pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</p>
+<h1>Chat: {{ paper_title }}</h1>
+{% if pdf %}<p class="mut">Answers are backed by quotes copied from this paper and checked by the server; anything it cannot find is removed.
+Each quote links to its PDF page. Your conversation about this paper is kept here.</p>{% include "chat_panel.html" %}
+{% else %}<div class="card">This paper has no PDF, so there is nothing to quote from. <a href="/app/attach/{{ stem }}">Attach a PDF</a> to chat about it.</div>{% endif %}{% endblock %}""",
     "settings.html": """{% extends "base.html" %}{% block body %}<h1>Settings</h1>
 <h2>Daily digest: excluded topics</h2>
 <p class="mut">The general daily digest skips these. (Projects have their own exclusions under Projects → Settings.)
@@ -675,6 +758,54 @@ async def concept_post(request: Request) -> Response:
     return redirect(f"/app/concepts/{slug}", "Saved.")
 
 
+_SCOPE = re.compile(r"^(paper|project):[\w.\-]+$")
+
+
+def chat_messages(request: Request) -> Response:
+    scope = request.query_params.get("scope", "")
+    if not _SCOPE.match(scope):
+        return JSONResponse({"error": "Bad scope."}, status_code=400)
+    try:
+        after = int(request.query_params.get("after", "0"))
+    except ValueError:
+        after = 0
+    return JSONResponse({"messages": chat.messages(scope, after)}, headers={"Cache-Control": "no-store"})
+
+
+async def chat_send(request: Request) -> Response:
+    form = request.state.form
+    scope, question = str(form.get("scope", "")), str(form.get("question", ""))
+    if not _SCOPE.match(scope):
+        return JSONResponse({"error": "Bad scope."}, status_code=400)
+    try:
+        mid = await run_in_threadpool(chat.send, CFG, scope, question)
+    except (chat.ChatError, chat.BudgetExceeded) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"id": mid})
+
+
+def project_chat_get(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    summ = chat.scope_summary(CFG, f"project:{slug}")
+    return render(request, "project_chat.html", title=f"Chat: {rv['title']}", title_=rv["title"], slug=slug,
+                  tabs=project_tabs(slug, "chat"), n_pdf=len(summ["with_pdf"]), skipped=summ["without_pdf"],
+                  scope=f"project:{slug}", placeholder="Ask about the papers in this project, e.g. how do they evaluate their tools?")
+
+
+def paper_chat_get(request: Request) -> Response:
+    stem = request.path_params["stem"]
+    try:
+        pfm, _ = read_page(notes.paper_path(CFG["vault"], stem))
+    except FileNotFoundError:
+        return HTMLResponse("No such paper.", status_code=404)
+    info = chat.paper_info(CFG, stem)
+    return render(request, "paper_chat.html", title=f"Chat: {pfm.get('title', stem)}", stem=stem,
+                  paper_title=pfm.get("title", stem), pdf=info["pdf"] if info else "", scope=f"paper:{stem}",
+                  placeholder="Ask about this paper, e.g. what are the main limitations?")
+
+
 def project_new_get(request: Request) -> Response:
     return render(request, "project_form.html", title="New project", mode="new", action="/app/projects/new",
                   f={"title": "", "question": "", "scope": "", "terms": "", "exclude": ""})
@@ -713,7 +844,7 @@ TABS_CSS = ("<style>.ptabs{display:flex;gap:1.1rem;padding:0 1rem;border-bottom:
 def project_tabs(slug: str, active: str) -> str:
     """The tab bar shared by a project's pages (also injected into the two standalone pages)."""
     base = f"/app/project/{quote(slug)}"
-    tabs = [("overview", "Overview", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes")]
+    tabs = [("overview", "Overview", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes"), ("chat", "Chat", base + "/chat")]
     links = "".join(f'<a href="{href}"{" class=on" if key == active else ""}>{label}</a>' for key, label, href in tabs)
     return f'{TABS_CSS}<nav class="ptabs">{links}<span class="sp"></span><a href="/reviews/{quote(slug)}/">Wiki page ↗</a></nav>'
 
@@ -827,7 +958,8 @@ def papers(request: Request) -> Response:
             break
         out.append({"stem": p.stem, "title": fm.get("title", p.stem), "year": fm.get("year") or "",
                     "authors": ", ".join(map(str, (fm.get("authors") or [])[:3])),
-                    "has_note": (v / notes.NOTES / p.name).exists()})
+                    "has_note": (v / notes.NOTES / p.name).exists(),
+                    "chat": str(fm.get("pdf") or "").lower().endswith(".pdf")})
     return render(request, "papers.html", title="Papers", papers=out, q=request.query_params.get("q", ""), more=more)
 
 
@@ -992,6 +1124,7 @@ def logout(request: Request) -> Response:
 def create_app(cfg) -> Starlette:
     global CFG
     CFG = cfg
+    chat.reset_interrupted()
     _asks_con().execute("UPDATE asks SET status='error', error='Interrupted by a restart; ask again.' WHERE status='running'")
     return Starlette(routes=[
         Route("/app", lambda r: RedirectResponse("/app/", status_code=308)),
@@ -1025,6 +1158,10 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),
         Route("/app/project/{slug}/act", guard(project_act), methods=["POST"]),
         Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
+        Route("/app/project/{slug}/chat", guard(project_chat_get), methods=["GET"]),
+        Route("/app/paper/{stem}/chat", guard(paper_chat_get), methods=["GET"]),
+        Route("/app/chat/messages", guard(chat_messages), methods=["GET"]),
+        Route("/app/chat/send", guard(chat_send), methods=["POST"]),
         Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
         Route("/app/project/{slug}/notes", guard(project_notes_post), methods=["POST"]),
         Route("/app/swipe", guard(swipe_get), methods=["GET"]),
