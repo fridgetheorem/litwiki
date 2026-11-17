@@ -1,15 +1,16 @@
 # litwiki
 
-A lightweight literature-review wiki: a Markdown vault that you read and edit in Obsidian and browse on the web,
+A lightweight literature-review wiki that you read and manage entirely in the web app (projects, concepts, notes, digests),
 built automatically from your Zotero library and a literature search of arXiv, OpenAlex and RSS feeds.
-Claude summarises each paper with page-cited, verified quotes; you tick what to ingest.
+Claude summarises each paper with page-cited, verified quotes; you pick what to ingest. Everything lives as plain Markdown files in a vault, which
+you can optionally open in Obsidian (see *Browse the vault in Obsidian*), but nothing requires it.
 
 ```
 Zotero (read-only key) ──┐
                          ├─► claude -p (summary + verified quotes) ─► <vault>/papers/*.md
-arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[tick in Obsidian / web / Discord]─┘      │
+arXiv / OpenAlex / RSS ─► triage ─► digests/*.md ─[approve in web / Discord]─┘      │
                                                                  concept backlinks ◄────────┘
-<vault> ◄─► Syncthing ◄─► Obsidian (your devices)
+<vault> ◄─► Syncthing ◄─► Obsidian        (optional: syncthing.enabled)
 <vault> ─► MkDocs (hourly, if changed) ─► Caddy (localhost) ─► tailscale serve / SSH tunnel ─► your browser
 ```
 
@@ -60,7 +61,7 @@ You also need a Zotero account and an Anthropic API key (console.anthropic.com).
    - `sudo tailscale serve --bg --http=8080 http://127.0.0.1:8080` and open `http://<host>.<your-tailnet>.ts.net:8080`
      (tailnet-only; the web UI additionally needs `LITWIKI_WEB_PASSWORD`), or
    - `ssh -L 8080:localhost:8080 you@host` and open `http://localhost:8080`.
-7. **Open the vault in Obsidian (optional).** Syncthing's admin page is `http://127.0.0.1:<syncthing.gui_address>` on the host
+7. **Browse the vault in Obsidian (optional extra).** Set `syncthing.enabled: true` in `config.yaml` and run `bin/watchdog.sh`. Syncthing's admin page is `http://127.0.0.1:<syncthing.gui_address>` on the host
    (tunnel it the same way; the first visit asks you to set a GUI password). Share the vault folder with your device,
    install Syncthing there, accept, and open the synced folder as an Obsidian vault. Sync uses TCP/UDP 22000 and UDP 21027;
    relays are on by default, so no port forwarding is needed.
@@ -76,10 +77,10 @@ You also need a Zotero account and an Anthropic API key (console.anthropic.com).
 | Path | What | Who edits |
 |---|---|---|
 | `papers/<author><year>-<title>.md` | One page per paper | Created once by litwiki; **body is never rewritten**. Only Zotero-owned frontmatter fields (title, authors, tags, collections…) are refreshed. |
-| `concepts/<slug>.md` | One page per broad concept | You. litwiki only edits between `<!-- litwiki:papers:start/end -->` (append-only list). `search_terms` / `arxiv_categories` / `discover` in the frontmatter steer the daily search. |
-| `reviews/<slug>.md` | One page per literature review: research question, scope, `search_terms`, `since_year`, `exclude` | You. Set `run: true` to search (next hourly run); litwiki resets it. |
-| `digests/YYYY-MM-DD.md`, `digests/search-<review>-<date>.md` | Daily / per-review search digest | Tick `- [x]` to ingest an item (next hourly run). |
-| `notes/<paper-stem>.md` | Your notes on a paper | You, in the web UI or Obsidian. Embedded into the paper page on the site. |
+| `concepts/<slug>.md` | One page per broad concept | You, on `/app/concepts` (or in a text editor). litwiki only edits between `<!-- litwiki:papers:start/end -->` (append-only list). `search_terms` / `arxiv_categories` / `discover` in the frontmatter steer the daily search. |
+| `reviews/<slug>.md` | One page per project: research question, scope, `search_terms`, `since_year`, `exclude` | You, on the project's Overview page. *Run search now* searches immediately (or set `run: true` for the next hourly run). |
+| `digests/YYYY-MM-DD.md`, `digests/search-<review>-<date>.md` | Daily / per-review search digest | Approve items in the web Inbox or Swipe page, or Discord (ticking `- [x]` in the file works too). |
+| `notes/<paper-stem>.md` | Your notes on a paper | You, in the web UI. Embedded into the paper page on the site. |
 | `_pdfs/` | PDFs / web snapshots | litwiki. Linked as `[[_pdfs/KEY.pdf#page=7\|p. 7]]` — opens at that page in Obsidian and in the browser. |
 | `index.md`, `status.md` | Home and pipeline status | Auto block only. |
 
@@ -111,26 +112,30 @@ also lists the latest drops so you can spot a keyword that is too broad), or set
 in `config.yaml` (shown read-only on the page). They apply to the general digest only; a project's own `exclude:` field handles that project's searches.
 
 ## Projects (grow a literature review over time)
-A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work. Create one with **New project** on `/app/projects` (title, question, scope, search terms and exclusions; *Suggest terms* drafts the terms and exclusions
-from your title and question with one small Haiku call), or with `litwiki review-new "Title"` and fill the page in by hand. A project's **Settings** link edits its
-terms, exclusions and active/archived status. Then screen papers from `/app/projects` or the *Screen papers for this project* button on its wiki page.
-`/app/project/<slug>` is a grid of cards for bulk decisions (visually distinct from the swipe view): **In library** (papers you already have that are not
+A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work, and it is administered entirely on the web at `/app/projects`.
+Create one with **New project** (title, question, scope, search terms and exclusions; *Suggest terms* drafts the terms and exclusions from your title and question
+with one small Haiku call). Each project has three tabs and a link to its published wiki page:
+- **Overview** (`/app/project/<slug>`): edit the research question, scope, search terms, exclusions and active/archived status; turn the daily digest on or off; and
+  **Run search now** (a full arXiv + OpenAlex search with cheap triage, a few cents; the page shows when it finishes). Saving rewrites only those fields and the two
+  text sections of the page; the auto-managed linked-papers list and anything else on it are untouched. If they changed elsewhere since you opened the form, the save is
+  refused and your text is kept. `litwiki review-new "Title"` still works for the command line.
+- **Papers** (`/app/project/<slug>/papers`) is a grid of cards for bulk decisions (visually distinct from the swipe view): **In library** (papers you already have that are not
 linked yet), **New** (candidates from the project's searches, see *Literature reviews*) and **Linked**. Tap cards to select them, then **Link to project**
 (free), **Ingest new** (summarises them, about $0.05-0.15 each, and they join the project), **Dismiss new** or **Unlink**. **Analyze** runs a cheap Haiku pass
 (about $0.002 per 12 papers, so a whole library costs a few cents) that gives each card a 0-10 *fit* score and 2-3 bullets on how it relates to the project;
-results are cached, library papers are analysed most-keyword-overlap first, 120 at a time.
+results are cached, so reopening the page costs nothing.
+- **Notes** (`/app/project/<slug>/notes`): the free-form whiteboard, described below.
 
-**Daily project digests.** Set `daily: true` on a project's page (or press *Turn on daily digest* on `/app/projects`; `status: archived` pauses it). After the
+**Daily project digests.** Press *Turn on daily digest* on the project's Overview (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it). After the
 global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
 window), scores them with the triage model against the project's question and scope, and writes `digests/project-<slug>-<date>.md` (nothing is written when
 nothing qualifies). Papers already seen for the project, ingested, or dismissed are skipped. The picks appear in the swipe queue, Inbox, Discord and the project's
 *New* tab; ingesting one links it to the project. `litwiki search <slug> --recent` runs the same thing now. Cost: a few triage calls (a fraction of a cent each)
 per project per day; per-term result cap: `discovery.project_daily_per_term` (default 25).
 
-**Project notes (whiteboard).** `/app/project/<slug>/notes` is a free-form markdown scratchpad per project, stored in `notes/projects/<slug>.md` (so Obsidian can edit
-it too). New notes start with *Ideas / Questions / Outline / To do* headings; the box above the editor is a quick-add that appends a dated bullet; the side panel lists
+**Project notes (whiteboard).** `/app/project/<slug>/notes` is a free-form markdown scratchpad per project, stored in `notes/projects/<slug>.md` (a plain Markdown file, so any editor can open it). New notes start with *Ideas / Questions / Outline / To do* headings; the box above the editor is a quick-add that appends a dated bullet; the side panel lists
 the project's linked papers and inserts a `[[papers/...|Title]]` link at the cursor when you click one. It autosaves a few seconds after you stop typing (no site
-rebuild), **Save & publish** (or Ctrl/⌘+S) also rebuilds the wiki, where the notes appear on the project's page under *Notes*. If the file changed elsewhere (Obsidian)
+rebuild), **Save & publish** (or Ctrl/⌘+S) also rebuilds the wiki, where the notes appear on the project's page under *Notes*. If the file changed elsewhere
 since you opened it, a save is refused and you choose *Keep mine* or *Use theirs*, so nothing is silently overwritten. Membership is the `reviews:` list in a paper's frontmatter (so
 `tag:#review/<slug>` works in Obsidian), and the review page keeps an auto-managed *Linked papers* list.
 
@@ -150,7 +155,12 @@ and fixes the concept pages' paper lists. The kept page's body is not rewritten.
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
 
-## Tags (Obsidian)
+## Concepts
+`/app/concepts` lists the topics papers are filed under. Open one to edit its title, description, aliases, search terms, arXiv categories, whether the daily digest
+searches it, and the Overview text you write; the paper list under it is maintained by litwiki and is never touched. **New concept** adds one (give it search terms to include it
+in the daily digest). Concept slugs are fixed once created because paper pages link to them. Initial concepts come from `litwiki bootstrap` (one LLM call, at setup).
+
+## Tags (for Obsidian users)
 Paper pages carry a native `tags:` property: `col/<collection path>` (nested, so `tag:#col/projects` matches
 everything below it), `zt/<zotero tag>`, `concept/<slug>`, `source/<origin>` and `review/<slug>`. litwiki only
 rewrites tags with those prefixes; tags you add yourself are kept. `litwiki retag` refreshes all pages.
