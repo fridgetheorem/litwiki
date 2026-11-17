@@ -332,24 +332,12 @@ _PLACEHOLDERS = {"Research question": "_What is this review trying to find out?_
                  "Scope": "_What is in scope, and what is not. Candidates are scored against this text._"}
 
 
-def _section_rx(name: str):
-    return re.compile(rf"(^## {re.escape(name)}[ \t]*\n)(.*?)(?=^## |\Z)", re.M | re.S)
-
-
 def _section(body: str, name: str) -> str:
-    m = _section_rx(name).search(body)
-    text = m.group(2).strip() if m else ""
-    return "" if text == _PLACEHOLDERS[name] else text
+    return vault.get_section(body, name, _PLACEHOLDERS[name])
 
 
 def _set_section(body: str, name: str, text: str) -> str:
-    # A heading typed inside the text would split the section, so demote any level-1/2 heading to level 3.
-    text = re.sub(r"^#{1,2}(?=\s)", "###", text.replace("\r\n", "\n").strip(), flags=re.M) or _PLACEHOLDERS[name]
-    block = f"## {name}\n\n{text}\n\n"
-    rx = _section_rx(name)
-    if rx.search(body):
-        return rx.sub(lambda _m: block, body, count=1)
-    return body.rstrip("\n") + "\n\n" + block
+    return vault.set_section(body, name, text, _PLACEHOLDERS[name])
 
 
 def _version(question: str, scope: str, terms: list, exclude: str, status: str) -> str:
