@@ -326,14 +326,15 @@ def _con():
 
 
 def messages(scope: str, after: int = 0) -> list[dict]:
-    rows = _con().execute("SELECT id, ts, role, status, text, data FROM chat_messages WHERE scope=? AND id>? ORDER BY id",
+    rows = _con().execute("SELECT id, ts, role, status, text, data, thread FROM chat_messages WHERE scope=? AND id>? ORDER BY id",
                           (scope, after)).fetchall()
     return [{**dict(r), "data": json.loads(r["data"] or "{}")} for r in rows]
 
 
-def _history(scope: str) -> list[tuple[str, str]]:
-    rows = _con().execute("SELECT role, text, data FROM chat_messages WHERE scope=? AND status='done' ORDER BY id DESC LIMIT ?",
-                          (scope, HISTORY_TURNS * 2)).fetchall()[::-1]
+def _history(scope: str, thread: int) -> list[tuple[str, str]]:
+    """The last few finished Q/A pairs of ONE thread; other threads in the scope are never shown to the model."""
+    rows = _con().execute("SELECT role, text, data FROM chat_messages WHERE scope=? AND thread=? AND status='done' "
+                          "ORDER BY id DESC LIMIT ?", (scope, thread, HISTORY_TURNS * 2)).fetchall()[::-1]
     out, q = [], None
     for r in rows:
         if r["role"] == "user":
@@ -372,8 +373,9 @@ def _run(cfg, scope: str, question: str, mid: int, history) -> None:
     con.commit()
 
 
-def send(cfg, scope: str, question: str, background: bool = True) -> int:
-    """Record the question and start answering it; returns the assistant message id to poll. One question at a time per
+def send(cfg, scope: str, question: str, thread: int | None = None, background: bool = True) -> tuple[int, int]:
+    """Record the question and start answering it; returns (assistant message id to poll, thread id). `thread` None
+    starts a new thread (which sees none of the earlier ones); otherwise it continues that thread. One question at a time per
     scope. Raises ChatError for an empty question, a spent daily budget, or a scope with nothing to read."""
     question = question.strip()[:2000]
     if not question:
@@ -385,15 +387,23 @@ def send(cfg, scope: str, question: str, background: bool = True) -> int:
     scope_papers(cfg, scope)   # fail fast, before anything is recorded
     if con.execute("SELECT 1 FROM chat_messages WHERE scope=? AND status='running'", (scope,)).fetchone():
         raise ChatError("Still answering the previous question; wait for it to finish.")
-    history = _history(scope)
-    con.execute("INSERT INTO chat_messages(scope, role, text) VALUES(?,?,?)", (scope, "user", question))
-    mid = con.execute("INSERT INTO chat_messages(scope, role, status) VALUES(?,?,?)", (scope, "assistant", "running")).lastrowid
+    if thread is not None and not con.execute("SELECT 1 FROM chat_messages WHERE scope=? AND thread=? AND role='user'",
+                                              (scope, thread)).fetchone():
+        raise ChatError("That conversation no longer exists; start a new thread.")
+    history = _history(scope, thread) if thread is not None else []
+    uid = con.execute("INSERT INTO chat_messages(scope, role, text, thread) VALUES(?,?,?,?)",
+                      (scope, "user", question, thread or 0)).lastrowid
+    if thread is None:
+        thread = uid                      # a thread is named by its first question's id
+        con.execute("UPDATE chat_messages SET thread=? WHERE id=?", (thread, uid))
+    mid = con.execute("INSERT INTO chat_messages(scope, role, status, thread) VALUES(?,?,?,?)",
+                      (scope, "assistant", "running", thread)).lastrowid
     con.commit()
     if background:
         threading.Thread(target=_run, args=(cfg, scope, question, mid, history), daemon=True).start()
     else:
         _run(cfg, scope, question, mid, history)
-    return mid
+    return mid, thread
 
 
 def reset_interrupted() -> None:

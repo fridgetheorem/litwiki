@@ -275,13 +275,25 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <textarea id="overview" name="overview" rows="10">{{ f.overview }}</textarea>{% endif %}
 <p><button class="b">{% if mode == 'new' %}Create concept{% else %}Save{% endif %}</button></p></form>{% endblock %}""",
     "chat_panel.html": """<div id="chat" data-scope="{{ scope }}" data-csrf="{{ csrf }}">
-<div id="msgs" aria-live="polite"></div>
+<nav id="side" aria-label="Conversations"><button class="b" id="newt" type="button">+ New thread</button><div id="threads"></div></nav>
+<div id="main"><div id="thead" class="mut"></div><div id="msgs" aria-live="polite"></div>
 <form id="cf"><textarea id="cq" rows="2" placeholder="{{ placeholder }}" maxlength="2000"></textarea>
-<div class="crow"><button class="b" id="cs">Ask</button><span class="mut" id="chint">Enter to send, Shift+Enter for a new line.</span></div></form></div>
+<div class="crow"><button class="b" id="cs">Ask</button><span class="mut" id="chint"></span></div></form></div></div>
 <style>
-#chat{display:flex;flex-direction:column;gap:.8rem}#msgs{display:flex;flex-direction:column;gap:.7rem}
-.m{border:1px solid var(--line);border-radius:10px;padding:.6rem .9rem;max-width:100%}.m.u{background:var(--card);align-self:flex-end;max-width:85%;white-space:pre-wrap}
+#chat{display:grid;grid-template-columns:minmax(0,17rem) minmax(0,1fr);gap:1.2rem;align-items:start}
+@media(max-width:800px){ #chat{grid-template-columns:minmax(0,1fr)}#side{position:static;max-height:14rem}}
+#side{position:sticky;top:.6rem;max-height:calc(100vh - 1.4rem);overflow:auto;display:flex;flex-direction:column;gap:.6rem}
+#threads{display:flex;flex-direction:column;gap:.7rem}
+.th{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}.th.on{border-color:var(--acc)}
+.th h4{margin:0;padding:.4rem .7rem;font-size:.78rem;font-weight:600;color:var(--mut);display:flex;justify-content:space-between;gap:.5rem}
+.th.on h4{color:var(--acc)}
+.qc{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:.4rem .7rem;font:inherit;font-size:.88rem;color:inherit;cursor:pointer;
+overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.qc:hover{background:var(--bg)}.qc.run{color:var(--mut)}.qc.err{color:var(--bad)}
+#main{display:flex;flex-direction:column;gap:.8rem}#thead{font-size:.88rem}#msgs{display:flex;flex-direction:column;gap:.7rem}
+.m{border:1px solid var(--line);border-radius:10px;padding:.6rem .9rem;max-width:100%;scroll-margin-top:.8rem}.m.u{background:var(--card);align-self:flex-end;max-width:85%;white-space:pre-wrap}
 .m.a{background:var(--bg)}.m.err{border-color:var(--bad);color:var(--bad)}.m .ans p{margin:.4rem 0}.m .ans{overflow-wrap:anywhere}
+.m.flash{outline:2px solid var(--acc)}
 .cite{color:var(--acc);text-decoration:none;font-weight:600}.qs{margin:.6rem 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.45rem}
 .qs li{border-left:3px solid var(--acc);padding:.2rem .6rem;background:var(--card);border-radius:0 6px 6px 0;font-size:.92rem}
 .qs q{font-style:normal}.qs q:before,.qs q:after{content:'"'}.qs .src{display:block;color:var(--mut);font-size:.85rem;margin-top:.15rem}
@@ -292,17 +304,18 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 (function(){
 const root=document.getElementById("chat"),scope=root.dataset.scope,csrf=root.dataset.csrf,msgs=document.getElementById("msgs");
 const q=document.getElementById("cq"),btn=document.getElementById("cs"),hint=document.getElementById("chint");
+const side=document.getElementById("threads"),thead=document.getElementById("thead");
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
-let last=0,timer=null,busy=false;
+let all=[],cur=null,timer=null,busy=false,jump=null;   // cur: thread id, or null = a new thread not started yet
 function setBusy(b){busy=b;btn.disabled=b;hint.textContent=b?"Reading the papers… the first question can take a minute while text is extracted.":"Enter to send, Shift+Enter for a new line."}
 function bubble(m){
   const d=m.data||{};
-  if(m.role==="user"){const e=el("div","m u",m.text);e.dataset.id=m.id;return e}
-  const e=el("div","m a");e.dataset.id=m.id;
-  if(m.status==="running"){e.textContent="Thinking…";e.classList.add("run");return e}
+  if(m.role==="user"){const e=el("div","m u",m.text);e.id="m"+m.id;return e}
+  const e=el("div","m a");e.id="m"+m.id;
+  if(m.status==="running"){e.textContent="Thinking…";return e}
   if(m.status==="error"){e.className="m a err";e.textContent=m.text;return e}
   const ans=el("div","ans");ans.innerHTML=m.text;   // server-escaped markdown; the only markup is the cite links
-  ans.querySelectorAll("a.cite").forEach(a=>{a.href="#c"+m.id+"-"+a.textContent.replace(/\D/g,"")});
+  ans.querySelectorAll("a.cite").forEach(a=>{a.href="#c"+m.id+"-"+a.textContent.replace(/\\D/g,"")});
   e.append(ans);
   if((d.quotes||[]).length){
     const ol=el("ol","qs");
@@ -320,27 +333,49 @@ function bubble(m){
   if(d.cost)notes.push("$"+d.cost.toFixed(3));
   if(notes.length)e.append(el("div","note",notes.join(" · ")));
   return e}
-function put(m){const old=msgs.querySelector('[data-id="'+m.id+'"]');const b=bubble(m);if(old)old.replaceWith(b);else msgs.append(b);if(m.id>last)last=m.id;return b}
-async function load(first){
-  const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");
-  const j=await r.json();msgs.textContent="";last=0;(j.messages||[]).forEach(put);
-  if((j.messages||[]).some(m=>m.status==="running")){setBusy(true);poll()}
-  if(first)window.scrollTo(0,document.body.scrollHeight)}
+function threads(){   // [{id, ms:[messages]}] oldest first
+  const by=new Map();all.forEach(m=>{if(!by.has(m.thread))by.set(m.thread,[]);by.get(m.thread).push(m)});
+  return [...by].map(([id,ms])=>({id,ms})).sort((a,b)=>a.ms[0].id-b.ms[0].id)}
+function when(ts){return (ts||"").slice(0,10)}
+function renderSide(){
+  side.textContent="";
+  threads().reverse().forEach(t=>{
+    const box=el("div","th"+(t.id===cur?" on":""));
+    const h=el("h4");h.append(el("span",null,t.id===0?"Earlier conversation":"Thread"),el("span",null,when(t.ms[0].ts)));box.append(h);
+    t.ms.filter(m=>m.role==="user").forEach(u=>{
+      const a=t.ms.find(m=>m.role==="assistant"&&m.id>u.id);
+      const b=el("button","qc"+(a&&a.status==="running"?" run":a&&a.status==="error"?" err":""),u.text);b.type="button";b.title=u.text;
+      b.onclick=()=>go(t.id,u.id);box.append(b)});
+    side.append(box)})}
+function renderMain(){
+  msgs.textContent="";
+  if(cur===null){thead.textContent="New thread. It does not see your earlier threads, so you can change direction freely.";return}
+  thead.textContent=cur===0?"Earlier conversation (from before threads). Ask here to continue it, or start a new thread.":"Questions in this thread see only this thread.";
+  all.filter(m=>m.thread===cur).forEach(m=>msgs.append(bubble(m)))}
+function render(){renderSide();renderMain();if(jump){const e=document.getElementById("m"+jump);jump=null;if(e){e.scrollIntoView({block:"start"});e.classList.add("flash");setTimeout(()=>e.classList.remove("flash"),1500)}}}
+function go(t,mid){cur=t;jump=mid||null;render();if(!mid)window.scrollTo(0,0);q.focus()}
+async function fetchAll(){const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");const j=await r.json();all=j.messages||[];return all}
+function running(){return all.some(m=>m.status==="running")}
+async function load(){
+  await fetchAll();
+  if(cur===null&&all.length){const last=threads().pop();cur=last.id}   // reopen the most recent thread
+  render();if(running()){setBusy(true);poll()}
+  window.scrollTo(0,document.body.scrollHeight)}
 function poll(){clearTimeout(timer);timer=setTimeout(async()=>{
-  try{const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");const j=await r.json();
-    (j.messages||[]).forEach(put);
-    if((j.messages||[]).some(m=>m.status==="running")){poll()}else{setBusy(false)}
-  }catch(e){poll()}},2500)}
+  try{await fetchAll();render();if(running()){poll()}else{setBusy(false)}}catch(e){poll()}},2500)}
 async function send(){
   const text=q.value.trim();if(!text||busy)return;setBusy(true);
-  const body=new URLSearchParams({_csrf:csrf,scope,question:text});
+  const body=new URLSearchParams({_csrf:csrf,scope,question:text,thread:cur===null?"":String(cur)});
   try{const r=await fetch("/app/chat/send",{method:"POST",body});const j=await r.json();
-    if(!r.ok){setBusy(false);const e=el("div","m a err",j.error||("Error "+r.status));msgs.append(e);return}
-    q.value="";await load(false);poll();window.scrollTo(0,document.body.scrollHeight)
+    if(!r.ok){setBusy(false);msgs.append(el("div","m a err",j.error||("Error "+r.status)));return}
+    q.value="";cur=j.thread;await fetchAll();render();poll();
+    const e=document.getElementById("m"+j.id);if(e)e.scrollIntoView({block:"end"})
   }catch(e){setBusy(false);msgs.append(el("div","m a err","Could not reach the server: "+e.message))}}
+document.getElementById("newt").onclick=()=>{cur=null;render();q.focus()};
 document.getElementById("cf").addEventListener("submit",ev=>{ev.preventDefault();send()});
 q.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&!ev.shiftKey){ev.preventDefault();send()}});
-load(true).catch(e=>msgs.append(el("div","m a err","Could not load the conversation: "+e.message)));
+setBusy(false);
+load().catch(e=>msgs.append(el("div","m a err","Could not load the conversation: "+e.message)));
 })();
 </script>""",
     "project_chat.html": """{% extends "base.html" %}{% block body %}
@@ -777,11 +812,14 @@ async def chat_send(request: Request) -> Response:
     scope, question = str(form.get("scope", "")), str(form.get("question", ""))
     if not _SCOPE.match(scope):
         return JSONResponse({"error": "Bad scope."}, status_code=400)
+    t = str(form.get("thread", "")).strip()          # empty = start a new thread
+    if t and not t.isdigit():
+        return JSONResponse({"error": "Bad thread."}, status_code=400)
     try:
-        mid = await run_in_threadpool(chat.send, CFG, scope, question)
+        mid, thread = await run_in_threadpool(chat.send, CFG, scope, question, int(t) if t else None)
     except (chat.ChatError, chat.BudgetExceeded) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse({"id": mid})
+    return JSONResponse({"id": mid, "thread": thread})
 
 
 def project_chat_get(request: Request) -> Response:
