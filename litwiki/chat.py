@@ -116,6 +116,26 @@ def scope_papers(cfg, scope: str) -> tuple[list[dict], list[str]]:
     return ok, skipped
 
 
+def scope_summary(cfg, scope: str) -> dict:
+    """{'with_pdf': [titles], 'without_pdf': [titles]} for a scope, without reading any PDF (cheap enough for page loads)."""
+    kind, _, ident = scope.partition(":")
+    v = cfg["vault"]
+    if kind == "paper":
+        stems = [ident]
+    elif kind == "project":
+        stems = [pg.stem for pg in sorted((v / vault.PAPERS).glob("*.md")) if ident in (read_page(pg)[0].get("reviews") or [])]
+    else:
+        stems = []
+    with_pdf, without = [], []
+    for stem in stems:
+        info = paper_info(cfg, stem)
+        if info:
+            with_pdf.append(info["title"])
+        elif (v / vault.PAPERS / f"{stem}.md").is_file():
+            without.append(str(read_page(v / vault.PAPERS / f"{stem}.md")[0].get("title") or stem))
+    return {"with_pdf": with_pdf, "without_pdf": without}
+
+
 # ---------- retrieval ----------
 
 def chunk_page(text: str) -> list[str]:
