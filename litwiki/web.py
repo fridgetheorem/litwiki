@@ -896,7 +896,7 @@ def note_post(request: Request) -> Response:
     except FileNotFoundError:
         return HTMLResponse("No such paper.", status_code=404)
     except notes.Conflict:
-        return redirect(f"/app/notes/{stem}", "This note changed elsewhere (e.g. in Obsidian) since you opened "
+        return redirect(f"/app/notes/{stem}", "This note changed elsewhere (another tab, or a synced edit) since you opened "
                         "it. Your edit was NOT saved: reload to see the current text, then redo it.", "err")
     request_build()
     return redirect(f"/app/notes/{stem}", "Saved. The site is rebuilding.")

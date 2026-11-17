@@ -122,7 +122,7 @@ def cmd_config_env(cfg, a):
     env = {
         "LITWIKI_VAULT": cfg["vault"], "LITWIKI_SITE_ROOT": ROOT / "site" / "current", "LITWIKI_LOGS": LOG_DIR,
         "LITWIKI_SITE_PORT": cfg["ports"]["site"], "LITWIKI_WEB_PORT": cfg["ports"]["web"],
-        "SYNCTHING_HOME": os.path.expanduser(st["home"]), "SYNCTHING_GUI": st["gui_address"],
+        "SYNCTHING_ENABLED": int(bool(st["enabled"])), "SYNCTHING_HOME": os.path.expanduser(st["home"]), "SYNCTHING_GUI": st["gui_address"],
     }
     for k, v in env.items():
         print(f"export {k}={shlex.quote(str(v))}")

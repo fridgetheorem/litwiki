@@ -5,7 +5,7 @@
 
 # ───────────── 1. Set these ─────────────
 
-# Markdown vault: the folder you open in Obsidian. Created on first use.
+# Markdown vault: where litwiki keeps its pages (Obsidian can open it too, optionally). Created on first use.
 vault: ~/vault
 
 # Address you browse the wiki at (only used for links in Discord messages), e.g. "http://litwiki.my-tailnet.ts.net:8080".
@@ -26,7 +26,10 @@ ports:
   site: 8080                 # Caddy, bound to 127.0.0.1 (expose with `tailscale serve`, see README)
   web: 8081                  # the /app/ web UI, 127.0.0.1 behind Caddy
 
+# Optional extra: sync the vault to Obsidian on your own devices. Everything can be done in the web app without it,
+# so this is off by default. Turn it on, then follow "Browse the vault in Obsidian" in the README.
 syncthing:
+  enabled: false
   home: ~/.config/syncthing-litwiki
   gui_address: 127.0.0.1:8384
 

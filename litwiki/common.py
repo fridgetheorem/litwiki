@@ -44,7 +44,7 @@ def load_env(path: Path = Path.home() / ".env") -> None:
 
 DEPLOY_DEFAULTS = {
     "ports": {"site": 8080, "web": 8081},
-    "syncthing": {"home": "~/.config/syncthing-litwiki", "gui_address": "127.0.0.1:8384"},
+    "syncthing": {"enabled": False, "home": "~/.config/syncthing-litwiki", "gui_address": "127.0.0.1:8384"},
     "schedule": {"hourly_minute": 17, "daily_hour_utc": 10},
 }
 
