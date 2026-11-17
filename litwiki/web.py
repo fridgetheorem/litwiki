@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from . import ask as askmod, exclusions, manual, notes, project, swipe, vault
+from . import ask as askmod, concept, exclusions, manual, notes, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -96,7 +96,7 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}
 label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:.6rem;align-items:flex-start}
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
-{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a>
+{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
 <main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>"""
@@ -244,6 +244,30 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <span class="mut">{% if f.status != 'active' %}archived projects are skipped{% elif f.daily %}searched every day, recent papers only{% else %}manual searches only{% endif %}</span></form></div>
 {% if searching %}<script>(function p(){fetch('/app/project/{{ slug }}/search-status').then(r=>r.json()).then(j=>{if(j.running)setTimeout(p,5000);else location.reload()}).catch(()=>setTimeout(p,10000))})()</script>{% endif %}
 {% endblock %}""",
+    "concepts.html": """{% extends "base.html" %}{% block body %}<h1>Concepts</h1>
+<p class="mut">Concepts are the topics your papers are filed under. Each one has search terms the daily digest looks for, and an overview you write.</p>
+<p><a class="b" href="/app/concepts/new">New concept</a></p>
+<table><tr><th>Concept</th><th>Papers</th><th>Terms</th><th>Daily search</th></tr>
+{% for c in concepts %}<tr><td><a href="/app/concepts/{{ c.slug }}">{{ c.title }}</a><div class="mut">{{ c.description[:140] }}</div></td>
+<td>{{ c.papers }}</td><td>{{ c.terms }}</td><td class="{{ '' if c.discover else 'mut' }}">{{ 'on' if c.discover else 'off' }}</td></tr>
+{% else %}<tr><td colspan="4" class="mut">No concepts yet.</td></tr>{% endfor %}</table>{% endblock %}""",
+    "concept_form.html": """{% extends "base.html" %}{% block body %}<p><a href="/app/concepts">← Concepts</a></p>
+<h1>{% if mode == 'new' %}New concept{% else %}{{ f.title }}{% endif %}</h1>
+<form method="post" action="{{ action }}" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
+{% if mode == 'edit' %}<input type="hidden" name="version" value="{{ f.version }}">{% endif %}
+<label for="title">Title</label><input id="title" type="text" name="title" value="{{ f.title }}" maxlength="100" required>
+<label for="description">Description <span class="mut">(one sentence; the scoring model sees it)</span></label>
+<textarea id="description" name="description" rows="2">{{ f.description }}</textarea>
+<div class="row"><div><label for="terms">Search terms <span class="mut">(one per line, 1-4 words)</span></label>
+<textarea id="terms" name="terms" rows="6">{{ f.terms_text }}</textarea></div>
+<div><label for="categories">arXiv categories <span class="mut">(optional, e.g. cs.CR cs.SE)</span></label>
+<input id="categories" type="text" name="categories" value="{{ f.categories_text }}">
+{% if mode == 'edit' %}<label for="aliases">Also known as <span class="mut">(one per line; used to match concepts by name)</span></label>
+<textarea id="aliases" name="aliases" rows="3">{{ f.aliases_text }}</textarea>{% endif %}</div></div>
+{% if mode == 'edit' %}<label><input type="checkbox" name="discover" value="1"{% if f.discover %} checked{% endif %}> Search for new papers on this concept in the daily digest</label>
+<label for="overview">Overview <span class="mut">(your synthesis; markdown. The paper list below it is maintained by litwiki)</span></label>
+<textarea id="overview" name="overview" rows="10">{{ f.overview }}</textarea>{% endif %}
+<p><button class="b">{% if mode == 'new' %}Create concept{% else %}Save{% endif %}</button></p></form>{% endblock %}""",
     "settings.html": """{% extends "base.html" %}{% block body %}<h1>Settings</h1>
 <h2>Daily digest: excluded topics</h2>
 <p class="mut">The general daily digest skips these. (Projects have their own exclusions under Projects → Settings.)
@@ -583,6 +607,69 @@ async def settings_post(request: Request) -> Response:
     return redirect("/app/settings", f"Saved: {len(kws)} keyword(s){' and a topics note' if topics.strip() else ''}.")
 
 
+def concepts_list(request: Request) -> Response:
+    return render(request, "concepts.html", title="Concepts", concepts=concept.summary(CFG))
+
+
+def _concept_form(request: Request, mode: str, action: str, f: dict, status: int = 200, flash=None) -> Response:
+    f = {**f, "terms_text": "\n".join(f.get("terms") or []) if not isinstance(f.get("terms"), str) else f["terms"],
+         "aliases_text": "\n".join(f.get("aliases") or []) if not isinstance(f.get("aliases"), str) else f["aliases"],
+         "categories_text": " ".join(f.get("categories") or []) if not isinstance(f.get("categories"), str) else f["categories"]}
+    return render(request, "concept_form.html", status=status, title=f.get("title") or "New concept", mode=mode,
+                  action=action, f=f, flash=flash)
+
+
+def concept_new_get(request: Request) -> Response:
+    return _concept_form(request, "new", "/app/concepts/new",
+                         {"title": "", "description": "", "terms": [], "categories": [], "aliases": []})
+
+
+async def concept_new_post(request: Request) -> Response:
+    form = request.state.form
+    f = {k: str(form.get(k, "")) for k in ("title", "description", "terms", "categories")}
+    try:
+        slug = await run_in_threadpool(concept.create, CFG, f["title"], f["description"], f["terms"], f["categories"])
+    except project.ProjectError as e:
+        return _concept_form(request, "new", "/app/concepts/new", {**f, "aliases": []}, 400, {"msg": str(e), "kind": "err"})
+    request_build()
+    return redirect(f"/app/concepts/{slug}", "Concept created. Add search terms to include it in the daily digest.")
+
+
+def _concept_or_404(request: Request):
+    slug = request.path_params["slug"]
+    try:
+        return slug, concept.read(CFG, slug)
+    except KeyError:
+        return slug, None
+
+
+def concept_get(request: Request) -> Response:
+    slug, f = _concept_or_404(request)
+    if f is None:
+        return HTMLResponse("No such concept.", status_code=404)
+    return _concept_form(request, "edit", f"/app/concepts/{slug}", f)
+
+
+async def concept_post(request: Request) -> Response:
+    slug, cur = _concept_or_404(request)
+    if cur is None:
+        return HTMLResponse("No such concept.", status_code=404)
+    form = request.state.form
+    p = {k: str(form.get(k, "")) for k in ("title", "description", "aliases", "terms", "categories", "overview", "version")}
+    try:
+        await run_in_threadpool(concept.save, CFG, slug, p["title"], p["description"], p["aliases"], p["terms"],
+                                p["categories"], bool(form.get("discover")), p["overview"], p["version"])
+    except (notes.Conflict, project.ProjectError) as e:
+        conflict = isinstance(e, notes.Conflict)
+        msg = ("This concept was changed somewhere else since you opened it. Your edits are kept below; "
+               "saving again overwrites that change.") if conflict else str(e)
+        mine = {**cur, **{k: p[k] for k in ("title", "description", "aliases", "terms", "categories", "overview")},
+                "discover": bool(form.get("discover"))}
+        return _concept_form(request, "edit", f"/app/concepts/{slug}", mine, 409 if conflict else 400, {"msg": msg, "kind": "err"})
+    request_build()
+    return redirect(f"/app/concepts/{slug}", "Saved.")
+
+
 def project_new_get(request: Request) -> Response:
     return render(request, "project_form.html", title="New project", mode="new", action="/app/projects/new",
                   f={"title": "", "question": "", "scope": "", "terms": "", "exclude": ""})
@@ -905,6 +992,11 @@ def create_app(cfg) -> Starlette:
         Route("/app/projects", guard(projects_list), methods=["GET"]),
         Route("/app/settings", guard(settings_get), methods=["GET"]),
         Route("/app/settings", guard(settings_post), methods=["POST"]),
+        Route("/app/concepts", guard(concepts_list), methods=["GET"]),
+        Route("/app/concepts/new", guard(concept_new_get), methods=["GET"]),
+        Route("/app/concepts/new", guard(concept_new_post), methods=["POST"]),
+        Route("/app/concepts/{slug}", guard(concept_get), methods=["GET"]),
+        Route("/app/concepts/{slug}", guard(concept_post), methods=["POST"]),
         Route("/app/projects/new", guard(project_new_get), methods=["GET"]),
         Route("/app/projects/new", guard(project_new_post), methods=["POST"]),
         Route("/app/projects/suggest", guard(project_suggest), methods=["POST"]),

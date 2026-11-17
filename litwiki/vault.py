@@ -30,6 +30,28 @@ def reviews(vault: Path) -> dict[str, dict]:
     return out
 
 
+def _section_rx(name: str):
+    return re.compile(rf"(^## {re.escape(name)}[ \t]*\n)(.*?)(?=^## |\Z)", re.M | re.S)
+
+
+def get_section(body: str, name: str, placeholder: str = "") -> str:
+    """Text under `## name` (up to the next `## ` heading); empty when missing or still the placeholder."""
+    m = _section_rx(name).search(body)
+    text = m.group(2).strip() if m else ""
+    return "" if text == placeholder else text
+
+
+def set_section(body: str, name: str, text: str, placeholder: str = "") -> str:
+    """Replace the text under `## name` (appending the section if the page lacks it); an empty text restores the
+    placeholder. A heading typed inside the text would split the section, so level-1/2 headings are demoted to level 3."""
+    text = re.sub(r"^#{1,2}(?=\s)", "###", text.replace("\r\n", "\n").strip(), flags=re.M) or placeholder
+    block = f"## {name}\n\n{text}\n\n"
+    rx = _section_rx(name)
+    if rx.search(body):
+        return rx.sub(lambda _m: block, body, count=1)
+    return body.rstrip("\n") + "\n\n" + block
+
+
 def create_review(vault: Path, title: str, question: str = "", scope: str = "",
                   search_terms: list[str] | None = None, exclude: str = "") -> str:
     """Scaffold reviews/<slug>.md. With no arguments it is a template to fill in by hand (the CLI); the web form
