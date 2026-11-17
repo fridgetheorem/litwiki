@@ -3,8 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Project notes · litwiki</title>
 <style>
-:root{color-scheme:light dark;--bg:#faf8f3;--fg:#2b2a27;--mut:#7a766c;--line:#e3ddcf;--paper:#fffdf8;--ink:#2d4a8a;--mark:#d9480f;--ok:#2b8a3e;--bad:#c92a2a;--hl:#fff3bf}
-@media(prefers-color-scheme:dark){:root{--bg:#1c1b18;--fg:#e8e4d9;--mut:#9a9586;--line:#3a372f;--paper:#24221e;--ink:#8fb0ff;--mark:#ff922b;--ok:#69db7c;--bad:#ff8787;--hl:#4a4320}}
+__THEME__
+:root{--paper:var(--bg);--ink:var(--acc);--mark:var(--new);--hl:var(--sel)}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh}
@@ -12,7 +12,7 @@ header{flex:none;display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;paddin
 header a{color:var(--ink);text-decoration:none}header h1{font-size:1.05rem;margin:0}header .sp{flex:1}
 #state{font-size:.85rem;color:var(--mut)}#state.dirty{color:var(--mark)}#state.ok{color:var(--ok)}
 button{font:inherit;cursor:pointer}
-.b{background:var(--ink);color:var(--paper);border:0;border-radius:8px;padding:.35rem .9rem;font-weight:600}
+.b{background:var(--ink);color:var(--accfg);border:0;border-radius:8px;padding:.35rem .9rem;font-weight:600}
 .b.sec{background:none;color:var(--ink);border:1px solid var(--ink)}
 #conflict{display:none;flex:none;padding:.6rem 1rem;background:var(--hl);border-bottom:1px solid var(--line);font-size:.92rem}
 #conflict button{margin-left:.5rem}
@@ -21,7 +21,7 @@ main{flex:1;min-height:0;display:flex;gap:1rem;padding:1rem}
 #cap{display:flex;gap:.5rem}
 #cap input{flex:1;padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--fg);font:inherit}
 #t{flex:1;min-height:0;resize:none;width:100%;padding:1rem 1.2rem;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--fg);
-  font:15.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background-image:repeating-linear-gradient(transparent,transparent 24.6px,var(--line) 24.6px,var(--line) 25.6px);background-attachment:local;box-shadow:0 1px 0 var(--line)}
+  font:15.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
 #t:focus{outline:2px solid var(--ink);outline-offset:0}
 #right{flex:none;width:21rem;display:flex;flex-direction:column;gap:.5rem;min-height:0}
 #right h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:.2rem 0}
