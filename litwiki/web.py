@@ -768,13 +768,23 @@ def project_search_status(request: Request) -> Response:
     return JSONResponse(project.SEARCHES.get(slug, {"running": False, "rc": None}))
 
 
+def _version(form) -> int:
+    """The mtime token a notes form was loaded with. Anything that is not a plain integer (a number a browser has
+    rounded to a float, junk) becomes 0, which cannot match an existing file, so the save is refused as a conflict
+    instead of crashing."""
+    try:
+        return int(str(form.get("mtime") or "0"))
+    except ValueError:
+        return 0
+
+
 def project_notes_get(request: Request) -> Response:
     """The project's whiteboard: a markdown scratchpad with quick capture and a picker for linked papers."""
     slug, rv = _project_or_404(request)
     if rv is None:
         return HTMLResponse("No such project.", status_code=404)
     text, mtime = project.read_notes(CFG, slug)
-    data = {"slug": slug, "title": rv["title"], "page_url": f"/reviews/{slug}/", "text": text, "mtime": mtime,
+    data = {"slug": slug, "title": rv["title"], "page_url": f"/reviews/{slug}/", "text": text, "mtime": str(mtime),  # a string: nanosecond mtimes exceed what a JS number holds exactly
             "skeleton": project.SKELETON, "papers": project.linked_papers(CFG, slug)}
     page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
@@ -789,13 +799,13 @@ async def project_notes_post(request: Request) -> Response:
         return JSONResponse({"error": "No such project."}, status_code=404)
     form = request.state.form
     try:
-        mtime = await run_in_threadpool(project.save_notes, CFG, slug, str(form.get("text", "")), int(form.get("mtime") or 0))
+        mtime = await run_in_threadpool(project.save_notes, CFG, slug, str(form.get("text", "")), _version(form))
     except notes.Conflict:
         text, cur = await run_in_threadpool(project.read_notes, CFG, slug)
-        return JSONResponse({"error": "changed elsewhere", "text": text, "mtime": cur}, status_code=409)
+        return JSONResponse({"error": "changed elsewhere", "text": text, "mtime": str(cur)}, status_code=409)
     if form.get("publish"):
         request_build()
-    return JSONResponse({"mtime": mtime})
+    return JSONResponse({"mtime": str(mtime)})
 
 
 def papers(request: Request) -> Response:
@@ -892,7 +902,7 @@ def note_get(request: Request) -> Response:
 def note_post(request: Request) -> Response:
     stem, form = request.path_params["stem"], request.state.form
     try:
-        notes.save_note(CFG["vault"], stem, str(form.get("text", "")), int(form.get("mtime") or 0))
+        notes.save_note(CFG["vault"], stem, str(form.get("text", "")), _version(form))
     except FileNotFoundError:
         return HTMLResponse("No such paper.", status_code=404)
     except notes.Conflict:
