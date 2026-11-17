@@ -24,6 +24,27 @@ def title_key(t: str) -> str:
 
 # ---------- sources ----------
 
+def _get_retrying(url: str, *, params=None, tries: int = 4, base_delay: float = 3.0, **kw):
+    """GET that retries on 429 / transient 5xx. arXiv rate-limits bursts aggressively and returns
+    429 with (sometimes) a Retry-After header; honour it, else exponential backoff. Raises on the
+    last attempt so the caller's existing try/except still records the failure."""
+    for attempt in range(tries):
+        r = requests.get(url, params=params, **kw)
+        if r.status_code in (429, 500, 502, 503, 504) and attempt < tries - 1:
+            ra = r.headers.get("Retry-After")
+            try:
+                delay = float(ra) if ra else base_delay * (2 ** attempt)
+            except ValueError:  # Retry-After can be an HTTP-date; fall back to backoff
+                delay = base_delay * (2 ** attempt)
+            log.warning("arxiv %s; retry %d/%d in %.0fs", r.status_code, attempt + 1, tries - 1, delay)
+            time.sleep(min(delay, 60))
+            continue
+        r.raise_for_status()
+        return r
+    r.raise_for_status()
+    return r
+
+
 def search_arxiv(terms, cats, since: date, n: int, by_relevance: bool = False) -> list[dict]:
     if by_relevance:  # back-catalog search: all words (not the exact phrase), ranked by relevance
         q = " OR ".join("(" + " AND ".join(f"abs:{w}" for w in re.findall(r"[\w-]+", t)) + ")" for t in terms)
@@ -33,10 +54,9 @@ def search_arxiv(terms, cats, since: date, n: int, by_relevance: bool = False) -
         q = f"({q}) AND ({' OR '.join('cat:' + c for c in cats)})"
     if by_relevance:  # filter by date on the server so the n results are all in range
         q = f"({q}) AND submittedDate:[{since:%Y%m%d}0000 TO 999912312359]"
-    r = requests.get("https://export.arxiv.org/api/query", headers=UA, timeout=60, params={
+    r = _get_retrying("https://export.arxiv.org/api/query", headers=UA, timeout=60, params={
         "search_query": q, "sortBy": "relevance" if by_relevance else "submittedDate",
         "sortOrder": "descending", "max_results": n})
-    r.raise_for_status()
     return [c for c in parse_arxiv(r.content) if c["date"] >= since.isoformat()]
 
 
@@ -212,7 +232,7 @@ def discover(cfg) -> dict:
             except Exception as e:
                 errors.append(f"{name}/{slug}: {e}")
                 log.warning("%s search failed for %s: %s", name, slug, e)
-            time.sleep(3.1 if name == "arxiv" else 0.2)  # arXiv API etiquette
+            time.sleep(3.5 if name == "arxiv" else 0.2)  # arXiv API etiquette
     for c in read_feeds(dc.get("feeds") or [], since):
         found.setdefault(c["id"], c)
 
@@ -342,9 +362,8 @@ def search_review(cfg, slug: str, since_year: int | None = None, extra_terms: li
             except Exception as e:
                 errors.append(f"{name}/{t}: {e}")
                 log.warning("%s search failed for %r: %s", name, t, e)
-            time.sleep(3.1 if name == "arxiv" else 0.2)
-    fresh = [c for c in found.values()
-             if c["title"] and title_key(c["title"]) not in known_titles and c["id"] not in seen_ids]
+            time.sleep(3.5 if name == "arxiv" else 0.2)
+    fresh = [c for c in found.values() if c["title"] and title_key(c["title"]) not in known_titles]
     log.info("review search %s: %d raw, %d not already in the library", slug, len(found), len(fresh))
     if len(errors) > len(terms):
         notify(f"Review search '{slug}': {len(errors)} source queries failed (e.g. {errors[0][:200]})", level="warn")
