@@ -157,6 +157,17 @@ and fixes the concept pages' paper lists. The kept page's body is not rewritten.
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
 
+## Reader and annotations
+Open any paper that has a PDF in the reader (`/app/paper/<stem>/read`: **Read** in the web Papers list, **Read and annotate** on the paper's wiki page and its chat page).
+It shows the PDF with [pdf.js](https://github.com/mozilla/pdf.js) and the paper's chat in a side pane; clicking a quote in an answer jumps to its page and highlights the passage
+(chat citations everywhere now open the reader at the quote, with the raw PDF as a second link).
+
+**Your own annotations:** pick Pen, Highlighter or Eraser and draw (stylus or mouse; undo with Ctrl+Z). Strokes are saved automatically in `state.db` (table `annotations`,
+one row per stroke, in PDF coordinates like Zotero's ink annotations, so they can be exchanged with Zotero later) and are per paper. **My notes** shows or hides the layer
+(remembered per paper in the browser). In a drawing tool the page is not scrolled by touch, so switch to **Hand** to scroll by finger; **Finger draws** lets a finger draw too.
+Stylus handling is the browser's: litwiki only checks the pointer type and has no palm rejection of its own (the OS and browser do that). Stroke smoothing is
+[perfect-freehand](https://github.com/steveruizok/perfect-freehand). Both libraries are vendored under `litwiki/static/vendor/` (Apache-2.0 and MIT), so the reader works offline.
+
 ## Chat with quotes
 Ask questions about one paper (`/app/paper/<stem>/chat`, linked from the paper's wiki page and the web Papers list) or about all the papers linked to a project
 (the project's **Chat** tab). The model must support every claim with exact quotes, and **the server checks each quote against the paper's own text**: case,

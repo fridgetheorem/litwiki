@@ -103,6 +103,20 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     thread INTEGER DEFAULT 0       -- id of the thread's first question; 0 = conversations from before threads existed
 );
 CREATE INDEX IF NOT EXISTS chat_scope ON chat_messages(scope, id);
+CREATE TABLE IF NOT EXISTS annotations (     -- the reader's own free-form layer (pen / highlighter strokes), one row per stroke
+    id TEXT PRIMARY KEY,           -- chosen by the browser, so retries and several devices merge without clashes
+    stem TEXT NOT NULL,            -- paper page stem
+    page INTEGER NOT NULL,         -- 0-based pageIndex, as in Zotero
+    kind TEXT NOT NULL,            -- pen | highlighter
+    color TEXT NOT NULL,           -- #rrggbb
+    width REAL NOT NULL,           -- stroke width in PDF points
+    opacity REAL NOT NULL DEFAULT 1,
+    data TEXT NOT NULL,            -- JSON {"paths": [[x1,y1,x2,y2,...]], "pressures": [[p1,p2,...]]}, PDF user space (bottom-left origin) like Zotero ink
+    created TEXT DEFAULT (datetime('now')),
+    updated TEXT DEFAULT (datetime('now')),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS annotations_paper ON annotations(stem, page);
 """
 
 

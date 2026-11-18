@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ · reader · litwiki</title>
+<link rel="stylesheet" href="/app/static/vendor/pdfjs/web/pdf_viewer.css">
+<style>
+__THEME__
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+button,input,select{font:inherit}button{cursor:pointer}
+.b{background:var(--acc);color:var(--accfg);border:0;border-radius:8px;padding:.35rem .8rem;font-weight:600}
+.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}button[disabled]{opacity:.4;cursor:default}
+#rtop{flex:none;display:flex;gap:.5rem .9rem;flex-wrap:wrap;align-items:center;padding:.45rem .8rem;border-bottom:1px solid var(--line);background:var(--card)}
+#rtop a{color:var(--acc);text-decoration:none}#rtop .ttl{font-weight:700;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp{display:flex;gap:.3rem;align-items:center}.sep{width:1px;align-self:stretch;background:var(--line)}
+.tb{background:none;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:.3rem .65rem}.tb.on{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+#pageno{width:3.4rem;padding:.25rem .3rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);text-align:right}
+.sw{width:1.35rem;height:1.35rem;border-radius:50%;border:2px solid var(--line);padding:0}.sw.on{outline:2px solid var(--acc);outline-offset:1px}
+#width{width:5.5rem}label.ck{display:flex;gap:.3rem;align-items:center;white-space:nowrap}
+#savestate{font-size:.85rem}#savestate.ok{color:var(--ok)}#savestate.dirty{color:var(--new)}#count{font-size:.85rem;color:var(--mut)}
+#hint{flex:none;padding:.2rem .8rem;font-size:.85rem;color:var(--mut);border-bottom:1px solid var(--line)}#hint.bad{color:var(--bad)}
+#rbody{flex:1;min-height:0;display:flex}
+#left{position:relative;flex:1;min-width:0}
+#viewerContainer{position:absolute;inset:0;overflow:auto;background:var(--card)}
+#pane{flex:none;width:27rem;max-width:45vw;border-left:1px solid var(--line);overflow:auto;padding:.7rem;background:var(--bg)}
+body.nochat #pane{display:none}
+.pdfViewer .page{margin:8px auto;border:1px solid var(--line)}
+.inkLayer{position:absolute;inset:0;pointer-events:none;z-index:6}.inkLayer svg{width:100%;height:100%;display:block;overflow:hidden}
+.drawing .inkLayer{pointer-events:auto;touch-action:none;cursor:crosshair}
+.ink-hidden .inkLayer{display:none}
+@media(max-width:900px){#pane{position:fixed;right:0;top:0;bottom:0;max-width:92vw;z-index:20;box-shadow:-6px 0 20px #0004}}
+</style></head><body>
+__NAV__
+<div id="rtop">
+<a href="/papers/__STEM__/">← Paper page</a><span class="ttl" title="__TITLE__">__TITLE__</span><span class="sep"></span>
+<div class="grp"><button class="tb" id="prev" type="button" title="Previous page">‹</button><input id="pageno" type="text" inputmode="numeric" aria-label="Page"> / <span id="pages">–</span><button class="tb" id="next" type="button" title="Next page">›</button></div>
+<div class="grp"><button class="tb" id="zout" type="button" title="Zoom out">−</button><button class="tb" id="zfit" type="button" title="Fit width">Fit</button><button class="tb" id="zin" type="button" title="Zoom in">+</button></div>
+<span class="sep"></span>
+<div class="grp" role="toolbar" aria-label="Annotation tools">
+<button class="tb on" data-tool="hand" type="button" title="Scroll, zoom, select text">Hand</button><button class="tb" data-tool="pen" type="button">Pen</button>
+<button class="tb" data-tool="highlighter" type="button">Highlighter</button><button class="tb" data-tool="eraser" type="button">Eraser</button></div>
+<div class="grp" id="colors"><button class="sw" data-color="#d62828" type="button" aria-label="Red"></button><button class="sw" data-color="#facc15" type="button" aria-label="Yellow"></button>
+<button class="sw" data-color="#16a34a" type="button" aria-label="Green"></button><button class="sw" data-color="#2563eb" type="button" aria-label="Blue"></button>
+<button class="sw" data-color="#111111" type="button" aria-label="Black"></button><button class="sw" data-color="#a855f7" type="button" aria-label="Purple"></button>
+<input id="width" type="range" min="0.6" max="30" step="0.2" value="1.6" aria-label="Stroke width"></div>
+<div class="grp"><button class="tb" id="undo" type="button" disabled title="Undo (Ctrl+Z)">Undo</button><button class="tb" id="redo" type="button" disabled title="Redo (Ctrl+Shift+Z)">Redo</button></div>
+<span class="sep"></span>
+<label class="ck" title="Show or hide your own pen and highlighter marks on this paper"><input type="checkbox" id="showink" checked> My notes</label>
+<label class="ck" title="Let a finger draw too. Off by default so a resting palm or finger does nothing"><input type="checkbox" id="finger"> Finger draws</label>
+<span id="count"></span><span id="savestate" class="ok"></span>
+<span style="flex:1"></span><button class="tb" id="chatbtn" type="button">Chat</button>
+</div>
+<div id="hint"></div>
+<div id="rbody"><div id="left"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div>
+<aside id="pane" aria-label="Chat about this paper">__CHAT__</aside></div>
+<script type="application/json" id="reader-data">__DATA__</script>
+<script type="module" src="/app/static/reader.mjs"></script>
+</body></html>

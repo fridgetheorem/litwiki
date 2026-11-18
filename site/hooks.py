@@ -96,7 +96,7 @@ def _with_notes(markdown: str, here: str, config, meta: dict | None = None) -> s
     label = "Edit notes" if note else "Add notes"
     attach = f" [Attach PDF](/app/attach/{stem}){{ .md-button }}" if (meta or {}).get("needs_pdf") else ""
     if str((meta or {}).get("pdf") or "").lower().endswith(".pdf"):
-        attach += f" [Chat about this paper](/app/paper/{stem}/chat){{ .md-button }}"
+        attach += f" [Read and annotate](/app/paper/{stem}/read){{ .md-button }} [Chat about this paper](/app/paper/{stem}/chat){{ .md-button }}"
     return (markdown.rstrip() + "\n\n## Notes (web)\n\n" + (note + "\n\n" if note else "")
             + f"[{label}](/app/notes/{stem}){{ .md-button }}{attach}\n")
 
