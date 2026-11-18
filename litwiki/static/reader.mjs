@@ -172,6 +172,13 @@ async function save() {
 }
 addEventListener("pagehide", () => { if (outbox.dirty) navigator.sendBeacon && navigator.sendBeacon(D.annUrl, new URLSearchParams({ _csrf: D.csrf, ops: JSON.stringify(outbox.take()) })); });
 
+async function flush() {   // make sure everything drawn so far is on the server before something reads it there
+  clearTimeout(saveTimer);
+  for (let i = 0; i < 40 && (outbox.dirty || saving); i++) { await save(); if (saving) await new Promise(r => setTimeout(r, 150)); }
+}
+$("dlann").addEventListener("click", async ev => { ev.preventDefault(); const href = ev.currentTarget.href; $("dl").open = false; await flush(); location.href = href; });
+addEventListener("click", ev => { const d = $("dl"); if (d.open && !d.contains(ev.target)) d.open = false; });
+
 // ---------- toolbar ----------
 function setTool(t) {
   if (t !== "hand" && !$("showink").checked) { $("showink").checked = true; applyVisible(); }

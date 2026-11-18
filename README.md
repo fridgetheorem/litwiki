@@ -168,6 +168,8 @@ one row per stroke, in PDF coordinates like Zotero's ink annotations, so they ca
 Stylus handling is the browser's: litwiki only checks the pointer type and has no palm rejection of its own (the OS and browser do that). Stroke smoothing is
 [perfect-freehand](https://github.com/steveruizok/perfect-freehand). Both libraries are vendored under `litwiki/static/vendor/` (Apache-2.0 and MIT), so the reader works offline.
 
+**Download:** the download button in the reader gives the original PDF, or the PDF with your strokes added as standard ink annotations (made on the fly; the stored file is never modified).
+
 ## Chat with quotes
 Ask questions about one paper (`/app/paper/<stem>/chat`, linked from the paper's wiki page and the web Papers list) or about all the papers linked to a project
 (the project's **Chat** tab). The model must support every claim with exact quotes, and **the server checks each quote against the paper's own text**: case,
@@ -178,7 +180,7 @@ Only papers with a PDF that has selectable text are searched (web snapshots and 
 `llm.max_text_chars` is sent whole; otherwise TF-IDF picks the passages closest to your question (at most 5 per paper in a project). Each paper and project keeps its own
 conversations (stored in `state.db`) as **threads**: the side panel lists every question, click one to jump to its answer, and **+ New thread** starts a conversation that
 sees none of the earlier ones. Follow-ups see only the last few turns of their own thread. Text is extracted from each PDF once and cached in `state/text/` (the first question
-over a new set of papers is slower). Cost is roughly $0.05-0.15 per question, under its own daily cap `budget.chat_daily_usd`.
+over a new set of papers is slower). Chat uses the cheap model (`llm.chat_model`, default `triage_model`, i.e. Haiku): about half a cent per question, since the server verifies every quote anyway. Daily cap: `budget.chat_daily_usd`.
 
 ## Concepts
 `/app/concepts` lists the topics papers are filed under. Open one to edit its title, description, aliases, search terms, arXiv categories, whether the daily digest

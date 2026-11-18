@@ -110,3 +110,32 @@ def apply(stem: str, ops_json: str) -> dict:
     con.commit()
     total = con.execute("SELECT COUNT(*) FROM annotations WHERE stem=? AND deleted=0", (stem,)).fetchone()[0]
     return {"added": added, "deleted": deleted, "restored": restored, "total": total}
+
+
+def _rgb(hexcolor: str) -> tuple[float, float, float]:
+    return tuple(int(hexcolor[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def annotated_pdf(pdf_path, strokes: list[dict]) -> bytes:
+    """The PDF with the strokes added as standard ink annotations (editable in other PDF programs). Coordinates go from
+    PDF user space to PyMuPDF page space (rotation is handled by the library; tested on a rotated page)."""
+    import pymupdf
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        if doc.needs_pass:
+            raise AnnotationError("This PDF is password-protected, so annotations cannot be added to it.")
+        for s in strokes:
+            if s["page"] >= doc.page_count:
+                continue
+            page = doc[s["page"]]
+            m = page.transformation_matrix   # PDF user space -> PyMuPDF page space; add_ink_annot applies the page rotation itself
+            paths = [[tuple(pymupdf.Point(flat[i], flat[i + 1]) * m) for i in range(0, len(flat), 2)] for flat in s["paths"]]
+            paths = [p if len(p) > 1 else p + [(p[0][0] + 0.01, p[0][1])] for p in paths]
+            a = page.add_ink_annot(paths)
+            a.set_border(width=s["width"])
+            a.set_colors(stroke=_rgb(s["color"]))
+            a.set_opacity(s["opacity"])
+            a.update()
+        return doc.tobytes(garbage=3, deflate=True)
+    finally:
+        doc.close()
