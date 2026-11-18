@@ -280,6 +280,77 @@ def cmd_discord(cfg, a):
     run(cfg)
 
 
+def _service_pids(name: str) -> list[int]:
+    """PIDs of this user's running `litwiki <name>` processes (read from /proc, so no pattern can match the caller)."""
+    out = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) == os.getpid():
+            continue
+        try:
+            if os.stat(f"/proc/{d}").st_uid != os.getuid():
+                continue
+            argv = open(f"/proc/{d}/cmdline", "rb").read().split(b"\0")
+            argv = [x.decode(errors="replace") for x in argv if x]
+        except OSError:
+            continue
+        if len(argv) >= 2 and argv[-1] == name and os.path.basename(argv[-2]) == "litwiki":
+            out.append(int(d))
+    return out
+
+
+def cmd_restart(cfg, a):
+    """Stop the web app and/or Discord bot, then let bin/watchdog.sh start them again on the current code."""
+    import signal
+    import subprocess
+    import time
+    import urllib.request
+    from .common import ROOT
+    names = ["serve", "discord"] if a.which == "all" else ["serve" if a.which == "web" else "discord"]
+    old = {n: _service_pids(n) for n in names}
+    for pids in old.values():
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+    deadline = time.time() + 20
+    while time.time() < deadline and any(_service_pids(n) for n in names):
+        time.sleep(0.5)
+    for n in names:                                   # still alive after 20 s: force it
+        for pid in _service_pids(n):
+            print(f"{n} (pid {pid}) ignored SIGTERM; killing")
+            os.kill(pid, signal.SIGKILL)
+    time.sleep(0.5)
+    r = subprocess.run([str(ROOT / "bin" / "watchdog.sh")], capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"watchdog.sh failed: {(r.stderr or r.stdout).strip()}")
+    time.sleep(2)
+    bad = 0
+    for n in names:
+        now = _service_pids(n)
+        label = "web" if n == "serve" else "discord"
+        if now:
+            print(f"{label}: restarted (pid {', '.join(map(str, now))}; was {', '.join(map(str, old[n])) or 'not running'})")
+        elif n == "discord" and not os.path.exists(os.path.expanduser("~/.env")):
+            print("discord: not started (no ~/.env with DISCORD_BOT_TOKEN)")
+        else:
+            print(f"{label}: NOT running after restart; see logs/{'web' if n == 'serve' else 'discord'}.out")
+            bad = 1
+    if "serve" in names and not bad:
+        url = f"http://127.0.0.1:{cfg['ports']['web']}/app/login"
+        for _ in range(20):
+            try:
+                code = urllib.request.urlopen(url, timeout=3).status
+                print(f"web: answering on port {cfg['ports']['web']} ({code})")
+                break
+            except Exception:
+                time.sleep(0.5)
+        else:
+            print(f"web: process is up but {url} is not answering yet; see logs/web.out")
+            bad = 1
+    sys.exit(bad)
+
+
 def cmd_hourly(cfg, a):
     """Zotero sync -> ingest new/approved items -> rebuild site if the vault changed."""
     from .discover import ingest_approved, run_requested_searches
@@ -387,6 +458,9 @@ def main():
     sp.add_argument("--no-detail", action="store_true", help="never read findings/limitations (single, cheaper call)")
     sp.set_defaults(f=cmd_ask)
     sub.add_parser("discord", help="run the Discord bot (digest posts with buttons, /add, /status)").set_defaults(f=cmd_discord)
+    sp = sub.add_parser("restart", help="restart the web app and Discord bot (picks up new code)")
+    sp.add_argument("which", nargs="?", choices=["all", "web", "discord"], default="all")
+    sp.set_defaults(f=cmd_restart)
     sub.add_parser("hourly", help="cron: sync + ingest + build").set_defaults(f=cmd_hourly)
     sub.add_parser("daily", help="cron: discovery digest").set_defaults(f=cmd_daily)
     a = p.parse_args()
