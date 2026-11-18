@@ -11,13 +11,17 @@ body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;dis
 button,input,select{font:inherit}button{cursor:pointer}
 .b{background:var(--acc);color:var(--accfg);border:0;border-radius:8px;padding:.35rem .8rem;font-weight:600}
 .b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}button[disabled]{opacity:.4;cursor:default}
-#rtop{flex:none;display:flex;gap:.5rem .9rem;flex-wrap:wrap;align-items:center;padding:.45rem .8rem;border-bottom:1px solid var(--line);background:var(--card)}
-#rtop a{color:var(--acc);text-decoration:none}#rtop .ttl{font-weight:700;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{flex:none;display:flex;gap:.5rem .9rem;flex-wrap:wrap;align-items:center;padding:.4rem .8rem;border-bottom:1px solid var(--line);background:var(--card)}
+#rtools{background:var(--bg)}
+.bar a{color:var(--acc);text-decoration:none}.bar .ttl{font-weight:700;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .grp{display:flex;gap:.3rem;align-items:center}.sep{width:1px;align-self:stretch;background:var(--line)}
-.tb{background:none;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:.3rem .65rem}.tb.on{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+.tb{background:none;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:.3rem .5rem;min-width:2.2rem;height:2.2rem;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.tb:hover{border-color:var(--acc)}.tb.on,.tg:has(input:checked){background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+.tg input{position:absolute;opacity:0;width:0;height:0}.tg:has(input:focus-visible),.tb:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ic{width:1.15rem;height:1.15rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #pageno{width:3.4rem;padding:.25rem .3rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);text-align:right}
 .sw{width:1.35rem;height:1.35rem;border-radius:50%;border:2px solid var(--line);padding:0}.sw.on{outline:2px solid var(--acc);outline-offset:1px}
-#width{width:5.5rem}label.ck{display:flex;gap:.3rem;align-items:center;white-space:nowrap}
+#width{width:5.5rem}
 #savestate{font-size:.85rem}#savestate.ok{color:var(--ok)}#savestate.dirty{color:var(--new)}#count{font-size:.85rem;color:var(--mut)}
 #hint{flex:none;padding:.2rem .8rem;font-size:.85rem;color:var(--mut);border-bottom:1px solid var(--line)}#hint.bad{color:var(--bad)}
 #rbody{flex:1;min-height:0;display:flex}
@@ -32,24 +36,29 @@ body.nochat #pane{display:none}
 @media(max-width:900px){#pane{position:fixed;right:0;top:0;bottom:0;max-width:92vw;z-index:20;box-shadow:-6px 0 20px #0004}}
 </style></head><body>
 __NAV__
-<div id="rtop">
-<a href="/papers/__STEM__/">← Paper page</a><span class="ttl" title="__TITLE__">__TITLE__</span><span class="sep"></span>
-<div class="grp"><button class="tb" id="prev" type="button" title="Previous page">‹</button><input id="pageno" type="text" inputmode="numeric" aria-label="Page"> / <span id="pages">–</span><button class="tb" id="next" type="button" title="Next page">›</button></div>
-<div class="grp"><button class="tb" id="zout" type="button" title="Zoom out">−</button><button class="tb" id="zfit" type="button" title="Fit width">Fit</button><button class="tb" id="zin" type="button" title="Zoom in">+</button></div>
+<div id="rtop" class="bar">
+<a href="/papers/__STEM__/" class="tb" title="Back to the paper page" aria-label="Back to the paper page">←</a><span class="ttl" title="__TITLE__">__TITLE__</span><span class="sep"></span>
+<div class="grp"><button class="tb" id="prev" type="button" title="Previous page" aria-label="Previous page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button><input id="pageno" type="text" inputmode="numeric" aria-label="Page"> / <span id="pages">–</span><button class="tb" id="next" type="button" title="Next page" aria-label="Next page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>
+<div class="grp"><button class="tb" id="zout" type="button" title="Zoom out" aria-label="Zoom out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg></button><button class="tb" id="zfit" type="button" title="Fit to width" aria-label="Fit to width"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 8 4 4-4 4"/><path d="m6 8-4 4 4 4"/><path d="M2 12h20"/></svg></button><button class="tb" id="zin" type="button" title="Zoom in" aria-label="Zoom in"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/><path d="M11 8v6"/></svg></button></div>
 <span class="sep"></span>
-<div class="grp" role="toolbar" aria-label="Annotation tools">
-<button class="tb on" data-tool="hand" type="button" title="Scroll, zoom, select text">Hand</button><button class="tb" data-tool="pen" type="button">Pen</button>
-<button class="tb" data-tool="highlighter" type="button">Highlighter</button><button class="tb" data-tool="eraser" type="button">Eraser</button></div>
-<div class="grp" id="colors"><button class="sw" data-color="#d62828" type="button" aria-label="Red"></button><button class="sw" data-color="#facc15" type="button" aria-label="Yellow"></button>
-<button class="sw" data-color="#16a34a" type="button" aria-label="Green"></button><button class="sw" data-color="#2563eb" type="button" aria-label="Blue"></button>
-<button class="sw" data-color="#111111" type="button" aria-label="Black"></button><button class="sw" data-color="#a855f7" type="button" aria-label="Purple"></button>
-<input id="width" type="range" min="0.6" max="30" step="0.2" value="1.6" aria-label="Stroke width"></div>
-<div class="grp"><button class="tb" id="undo" type="button" disabled title="Undo (Ctrl+Z)">Undo</button><button class="tb" id="redo" type="button" disabled title="Redo (Ctrl+Shift+Z)">Redo</button></div>
-<span class="sep"></span>
-<label class="ck" title="Show or hide your own pen and highlighter marks on this paper"><input type="checkbox" id="showink" checked> My notes</label>
-<label class="ck" title="Let a finger draw too. Off by default so a resting palm or finger does nothing"><input type="checkbox" id="finger"> Finger draws</label>
+<label class="tb tg" title="Show or hide your own pen and highlighter marks on this paper"><input type="checkbox" id="showink" checked aria-label="Show my annotations"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></label>
 <span id="count"></span><span id="savestate" class="ok"></span>
-<span style="flex:1"></span><button class="tb" id="chatbtn" type="button">Chat</button>
+<span style="flex:1"></span><button class="tb" id="chatbtn" type="button" title="Show or hide the chat" aria-label="Show or hide the chat"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+</div>
+<div id="rtools" class="bar" role="toolbar" aria-label="Annotation tools">
+<div class="grp"><button class="tb on" data-tool="hand" type="button" title="Hand: scroll, zoom, select text" aria-label="Hand"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+<button class="tb" data-tool="pen" type="button" title="Pen" aria-label="Pen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>
+<button class="tb" data-tool="highlighter" type="button" title="Highlighter" aria-label="Highlighter"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+<button class="tb" data-tool="eraser" type="button" title="Eraser (a stylus's eraser end also works)" aria-label="Eraser"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button></div>
+<span class="sep"></span>
+<div class="grp" id="colors"><button class="sw" data-color="#d62828" type="button" aria-label="Red" title="Red"></button><button class="sw" data-color="#facc15" type="button" aria-label="Yellow" title="Yellow"></button>
+<button class="sw" data-color="#16a34a" type="button" aria-label="Green" title="Green"></button><button class="sw" data-color="#2563eb" type="button" aria-label="Blue" title="Blue"></button>
+<button class="sw" data-color="#111111" type="button" aria-label="Black" title="Black"></button><button class="sw" data-color="#a855f7" type="button" aria-label="Purple" title="Purple"></button></div>
+<input id="width" type="range" min="0.6" max="30" step="0.2" value="1.6" aria-label="Stroke width" title="Stroke width">
+<span class="sep"></span>
+<div class="grp"><button class="tb" id="undo" type="button" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button><button class="tb" id="redo" type="button" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button></div>
+<span class="sep"></span>
+<label class="tb tg" title="Let a finger draw too. Off by default, so a resting palm or finger does nothing"><input type="checkbox" id="finger" aria-label="Finger draws"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 14a8 8 0 0 1-8 8"/><path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></label>
 </div>
 <div id="hint"></div>
 <div id="rbody"><div id="left"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div>

@@ -42,6 +42,16 @@ export function outlineToPath(pts) {
   return d + "Z";
 }
 
+// Is the keyboard focus somewhere the user is typing text? (Ctrl+Z must undo the drawing everywhere else, including
+// after dragging the width slider or ticking a checkbox, which also take focus.)
+export function isTyping(el) {
+  if (!el || !el.tagName) return false;
+  const t = el.tagName.toLowerCase();
+  if (t === "textarea" || t === "select" || el.isContentEditable) return true;
+  if (t !== "input") return false;
+  return !["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"].includes(String(el.type || "text").toLowerCase());
+}
+
 export function firstWords(text, n) {
   return String(text || "").split(/\s+/).filter(Boolean).slice(0, n).join(" ");
 }
