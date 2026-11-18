@@ -4,7 +4,7 @@
 import * as pdfjsLib from "/app/static/vendor/pdfjs/build/pdf.min.mjs";
 import { EventBus, FindState, PDFViewer, PDFLinkService, PDFFindController } from "/app/static/vendor/pdfjs/web/pdf_viewer.mjs";
 import { getStroke } from "/app/static/vendor/perfect-freehand/index.mjs";
-import { newId, strokeHit, outlineToPath, findAttempts, History, Outbox } from "/app/static/ink-core.mjs";
+import { newId, isTyping, strokeHit, outlineToPath, findAttempts, History, Outbox } from "/app/static/ink-core.mjs";
 
 const D = JSON.parse(document.getElementById("reader-data").textContent);
 const $ = id => document.getElementById(id);
@@ -192,7 +192,7 @@ $("finger").addEventListener("change", () => { fingerOK = $("finger").checked; s
 $("width").addEventListener("input", () => { width = +$("width").value; widths[tool === "highlighter" ? "highlighter" : "pen"] = width; });
 document.querySelectorAll("[data-color]").forEach(b => { b.style.background = b.dataset.color; b.addEventListener("click", () => { color = b.dataset.color; store.set("lw-ink-color", color); document.querySelectorAll("[data-color]").forEach(x => x.classList.toggle("on", x === b)); }); });
 addEventListener("keydown", ev => {
-  if (ev.target.matches("input,textarea,select")) return;
+  if (isTyping(ev.target)) return;
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); const op = ev.shiftKey ? history.redo() : history.undo(); if (op) applyOp(op); }
   else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") { ev.preventDefault(); const op = history.redo(); if (op) applyOp(op); }
 });
