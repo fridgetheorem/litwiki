@@ -209,8 +209,9 @@ $("pageno").addEventListener("change", () => { const n = parseInt($("pageno").va
 $("zin").addEventListener("click", () => pdfViewer.increaseScale());
 $("zout").addEventListener("click", () => pdfViewer.decreaseScale());
 $("zfit").addEventListener("click", () => { pdfViewer.currentScaleValue = "page-width"; });
-$("chatbtn").addEventListener("click", () => { const on = document.body.classList.toggle("nochat"); store.set("lw-reader-chat", on ? "0" : "1"); });
-if (store.get("lw-reader-chat", "1") === "0") document.body.classList.add("nochat");
+function showChat(on) { document.body.classList.toggle("nochat", !on); $("chatbtn").classList.toggle("on", on); $("chatbtn").setAttribute("aria-pressed", String(on)); store.set("lw-reader-chat", on ? "1" : "0"); }
+$("chatbtn").addEventListener("click", () => showChat(document.body.classList.contains("nochat")));
+showChat(store.get("lw-reader-chat", "1") !== "0");
 
 // ---------- jump to a page / a quote (chat citations) ----------
 let findState = null;
