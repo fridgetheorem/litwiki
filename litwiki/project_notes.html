@@ -33,9 +33,9 @@ main{flex:1;min-height:0;display:flex;gap:1rem;padding:1rem}
 .none{color:var(--mut);font-style:italic;font-size:.9rem}
 @media(max-width:860px){main{flex-direction:column}#right{width:auto;height:30%}}
 </style></head><body>
-<header><a href="/app/projects">← Projects</a><h1 id="title"></h1><span class="sp"></span><span id="state"></span>
-<button class="b" id="save" type="button">Save &amp; publish</button></header>
 __TABS__
+<header><span class="sp"></span><span id="state"></span>
+<button class="b" id="save" type="button">Save &amp; publish</button></header>
 <div id="conflict">This note was changed elsewhere (another tab, or a synced edit) since you opened it.
 <button class="b sec" id="mine" type="button">Keep mine</button><button class="b sec" id="theirs" type="button">Use theirs</button></div>
 <main>
@@ -50,7 +50,7 @@ __TABS__
 const D=JSON.parse(document.getElementById("data").textContent),CSRF="__CSRF__",BASE="/app/project/"+encodeURIComponent(D.slug);
 const $=id=>document.getElementById(id),t=$("t");
 let mtime=D.mtime,saved=D.text,saving=false,timer=null,theirs=null;
-$("title").textContent="Notes: "+D.title;
+
 t.value=D.text||D.skeleton;
 const stamp=()=>new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
 function setState(msg,cls){const s=$("state");s.textContent=msg;s.className=cls||""}
