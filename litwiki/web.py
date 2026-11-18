@@ -285,7 +285,7 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
     "chat_panel.html": """<div id="chat" data-scope="{{ scope }}" data-csrf="{{ csrf }}"{% if compact %} data-compact{% endif %}{% if reader %} data-reader{% endif %}>
 <nav id="side" aria-label="Conversations"><button class="b" id="newt" type="button">+ New thread</button><div id="threads"></div></nav>
 <div id="main"><div id="thead" class="mut"></div><div id="msgs" aria-live="polite"></div>
-<form id="cf"><textarea id="cq" rows="2" placeholder="{{ placeholder }}" maxlength="2000"></textarea>
+<form id="cf"><textarea id="cq" rows="1" placeholder="{{ placeholder }}" maxlength="2000"></textarea>
 <div class="crow"><button class="b" id="cs">Ask</button><span class="mut" id="chint"></span></div></form></div></div>
 <style>
 #chat{display:grid;grid-template-columns:minmax(0,17rem) minmax(0,1fr);gap:1.2rem;align-items:start}
@@ -309,12 +309,17 @@ overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vert
 .qs li{border-left:3px solid var(--acc);padding:.2rem .6rem;background:var(--card);border-radius:0 6px 6px 0;font-size:.92rem}
 .qs q{font-style:normal}.qs q:before,.qs q:after{content:'"'}.qs .src{display:block;color:var(--mut);font-size:.85rem;margin-top:.15rem}
 .qs li:target{outline:2px solid var(--acc)}.note{color:var(--mut);font-size:.85rem;margin-top:.4rem}
-#chat textarea{resize:vertical}.crow{display:flex;gap:.7rem;align-items:center;margin-top:.4rem}
+#cf{display:flex;flex-direction:column;gap:.4rem;width:100%;flex:none}
+#chat textarea{display:block;width:100%;box-sizing:border-box;min-height:2.6rem;max-height:11rem;resize:none;overflow-y:auto;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;line-height:1.4}
+#chat textarea:focus{outline:2px solid var(--acc);outline-offset:0}
+.crow{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
 </style>
 <script>
 (function(){
 const root=document.getElementById("chat"),scope=root.dataset.scope,csrf=root.dataset.csrf,msgs=document.getElementById("msgs");
 const q=document.getElementById("cq"),btn=document.getElementById("cs"),hint=document.getElementById("chint");
+const grow=()=>{q.style.height="auto";q.style.height=Math.min(q.scrollHeight+2,176)+"px"};   // grows with the text, then scrolls
+q.addEventListener("input",grow);
 const side=document.getElementById("threads"),thead=document.getElementById("thead");
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 const readerUrl=(stem,page,quote)=>"/app/paper/"+encodeURIComponent(stem)+"/read?page="+Math.max(1,page|0)+"&find="+encodeURIComponent(String(quote||"").split(/\\s+/).filter(Boolean).slice(0,14).join(" "));
@@ -386,7 +391,7 @@ async function send(){
   const body=new URLSearchParams({_csrf:csrf,scope,question:text,thread:cur===null?"":String(cur)});
   try{const r=await fetch("/app/chat/send",{method:"POST",body});const j=await r.json();
     if(!r.ok){setBusy(false);msgs.append(el("div","m a err",j.error||("Error "+r.status)));return}
-    q.value="";cur=j.thread;await fetchAll();render();poll();
+    q.value="";grow();cur=j.thread;await fetchAll();render();poll();
     const e=document.getElementById("m"+j.id);if(e)e.scrollIntoView({block:"end"})
   }catch(e){setBusy(false);msgs.append(el("div","m a err","Could not reach the server: "+e.message))}}
 document.getElementById("newt").onclick=()=>{cur=null;render();q.focus()};
