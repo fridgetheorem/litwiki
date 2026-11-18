@@ -128,7 +128,7 @@ results are cached, so reopening the page costs nothing.
 - **Notes** (`/app/project/<slug>/notes`): the free-form whiteboard, described below.
 - **Chat** (`/app/project/<slug>/chat`): ask questions about the project's linked papers and get answers backed by direct quotes (see *Chat with quotes*).
 
-**Daily project digests.** Press *Turn on daily digest* on the project's Overview (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it). After the
+**Daily project digests.** Press *Turn on daily digest* on the project's Overview (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it; the **Archive** button on a project's card in `/app/projects` does the same and moves it to an Archived section). After the
 global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
 window), scores them with the triage model against the project's question and scope, and writes `digests/project-<slug>-<date>.md` (nothing is written when
 nothing qualifies). Papers already seen for the project, ingested, or dismissed are skipped. The picks appear in the swipe queue, Inbox, Discord and the project's
@@ -156,6 +156,8 @@ the page); appends the dropped pages' notes; rewrites `[[links]]` to the dropped
 and fixes the concept pages' paper lists. The kept page's body is not rewritten. New Zotero items that duplicate an existing page are
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
+
+A project's **wiki page** (`/reviews/<slug>/`) shows its Notes under four buttons (Overview, Papers, Notes, Chat); the question, scope and search terms live on the Overview tab only.
 
 ## Models and cost
 Each kind of call has its own model setting in `config.yaml` under `llm:` (`summary_model`, `backfill_model`, `manual_model`, `ask_model`, `triage_model`, `chat_model`, `profile_model`,

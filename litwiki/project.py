@@ -292,7 +292,19 @@ def summary(cfg) -> list[dict]:
             waiting[s] = waiting.get(s, 0) + 1
     return [{"slug": s, "title": rv["title"], "linked": counts.get(s, 0), "waiting": waiting.get(s, 0),
              "terms": len(rv.get("search_terms") or []), "daily": rv.get("daily") is True,
+             "question": _section(rv.get("text", ""), "Research question"), "created": str(rv.get("created") or ""),
              "status": str(rv.get("status", "active"))} for s, rv in vault.reviews(v).items()]
+
+
+def set_status(cfg, slug: str, status: str) -> None:
+    """Archive or reactivate a project (an archived one is skipped by the daily run). Changes only the status field."""
+    if status not in ("active", "archived"):
+        raise ProjectError("Status must be active or archived.")
+    rv = get(cfg, slug)
+    fm, body = read_page(rv["path"])
+    if str(fm.get("status", "active")) != status:
+        fm["status"] = status
+        write_page(rv["path"], fm, body)
 
 
 # ---------- creating and configuring projects from the web app ----------

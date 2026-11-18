@@ -128,18 +128,34 @@ def _with_bib(markdown: str, here: str) -> str:
 _TOP_PDF_LINK = re.compile(r"\[\[_pdfs/[^\]|#]+\.pdf\|PDF\]\]")   # exactly the header link written at ingest
 
 
+_BTN = 'style="font-size:.95rem;margin:.25rem"'
+
+
+def _project_page(here: str, page, config) -> str:
+    """A project's wiki page is its Notes (written in the web app), under big buttons into the project's management pages.
+    The question, scope and search terms live on the Overview tab, not here."""
+    slug = posixpath.basename(here).removesuffix(".md")
+    title = html.escape(str((page.meta or {}).get("title") or slug))
+    note = ""
+    try:
+        note = FM.sub("", open(os.path.join(config["docs_dir"], "notes", "projects", slug + ".md"), encoding="utf-8").read(), 1).strip()
+    except OSError:
+        pass
+    base = f"/app/project/{quote(slug)}"
+    buttons = "".join(f'<a class="md-button{" md-button--primary" if i == 0 else ""}" {_BTN} href="{base}{path}">{label}</a>'
+                      for i, (label, path) in enumerate((("Overview", ""), ("Papers", "/papers"), ("Notes", "/notes"), ("Chat", "/chat"))))
+    archived = str((page.meta or {}).get("status", "active")) == "archived"
+    head = f'<p style="text-align:center;margin:1.2rem 0 1.6rem">{buttons}</p>'
+    if archived:
+        head += '<p style="text-align:center"><em>Archived project</em></p>'
+    body = note or f"_No notes yet. [Write some]({base}/notes) in the web app; they will appear here._"
+    return f"# {title}\n\n{head}\n\n{body}\n"
+
+
 def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
     if here.startswith("reviews/") and posixpath.basename(here) != "index.md":
-        slug = posixpath.basename(here).removesuffix(".md")
-        note = ""
-        try:
-            note = FM.sub("", open(os.path.join(config["docs_dir"], "notes", "projects", slug + ".md"), encoding="utf-8").read(), 1).strip()
-        except OSError:
-            pass
-        markdown = (markdown.rstrip() + "\n\n## Notes\n\n" + (note + "\n\n" if note else "")
-                    + f"[{'Edit notes' if note else 'Add notes'}](/app/project/{slug}/notes){{ .md-button }} "
-                    + f"[Open project](/app/project/{slug}){{ .md-button }} [Chat about its papers](/app/project/{slug}/chat){{ .md-button }}\n")
+        markdown = _project_page(here, page, config)
     if here.startswith("papers/"):
         if str((page.meta or {}).get("pdf") or "").lower().endswith(".pdf"):
             # the PDF link at the top of the page opens the reader (the raw file stays available from the reader's download menu)
