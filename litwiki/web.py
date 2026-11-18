@@ -109,11 +109,25 @@ table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5
 {% if authed %}{% include "nav.html" %}{% endif %}
 {% if tabs %}<div class="pview">{{ tabs|safe }}{% endif %}<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main>{% if tabs %}</div>{% endif %}</body></html>""".replace("__THEME__", THEME_VARS)
 
-NAV = """<style>nav.gnav{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:var(--card);font:16px/1.5 system-ui,sans-serif}
-nav.gnav a,nav.gnav button{color:var(--acc);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}nav.gnav .sp{flex:1}nav.gnav form{margin:0}</style>
-<nav class="gnav"><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
-<a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
-<form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>"""
+NAV = """<style>nav.gnav{display:flex;gap:.3rem 1.1rem;flex-wrap:wrap;align-items:center;padding:.5rem 1rem;border-bottom:1px solid var(--line);background:var(--card);font:16px/1.5 system-ui,sans-serif;position:relative;z-index:50}
+nav.gnav a,nav.gnav button,nav.gnav summary{color:var(--acc);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}nav.gnav .sp{flex:1}nav.gnav form{margin:0}
+nav.gnav .home{display:inline-flex;gap:.35rem;align-items:center;font-weight:700}nav.gnav .home svg{width:1.1rem;height:1.1rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+nav.gnav details{position:relative}nav.gnav summary{list-style:none;padding:.2rem 0;user-select:none}nav.gnav summary::-webkit-details-marker{display:none}
+nav.gnav summary::after{content:"\\25BE";margin-left:.3rem;font-size:.8em}nav.gnav details[open]>summary{color:var(--fg)}
+nav.gnav .menu{position:absolute;top:calc(100% + .35rem);left:0;min-width:12rem;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.3rem;box-shadow:0 8px 24px #0003;display:flex;flex-direction:column}
+nav.gnav .menu a{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .7rem;border-radius:6px;color:var(--fg)}nav.gnav .menu a:hover{background:var(--bg);color:var(--acc)}
+nav.gnav .n{color:var(--acc);font-weight:600}</style>
+<nav class="gnav"><a class="home" href="/" title="Home: the wiki's landing page" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>Home</a>
+<details><summary>Ingestion{% if inbox_n %} <span class="n">({{ inbox_n }})</span>{% endif %}</summary><div class="menu"><a href="/app/">Ingestion page</a>
+<a href="/app/inbox">Inbox{% if inbox_n %}<span class="n">{{ inbox_n }}</span>{% endif %}</a><a href="/app/swipe">Swipe</a></div></details>
+<details><summary>Overview</summary><div class="menu"><a href="/app/concepts">Concepts</a><a href="/app/papers">Papers</a><a href="/app/profile">Interest profile</a></div></details>
+<details><summary>Tools</summary><div class="menu"><a href="/app/projects">Projects</a><a href="/app/ask">Ask</a><a href="/clusters/">Map</a></div></details>
+<a href="/app/settings">Settings</a><span class="sp"></span>
+<form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>
+<script>(function(){if(window.__lwNav)return;window.__lwNav=1;
+document.addEventListener("toggle",function(e){var d=e.target;if(!d.open||!d.closest||!d.closest("nav.gnav"))return;document.querySelectorAll("nav.gnav details[open]").forEach(function(o){if(o!==d)o.open=false})},true);
+document.addEventListener("click",function(e){if(e.target.closest&&e.target.closest("nav.gnav details"))return;document.querySelectorAll("nav.gnav details[open]").forEach(function(o){o.open=false})});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")document.querySelectorAll("nav.gnav details[open]").forEach(function(o){o.open=false})})})();</script>"""
 
 TEMPLATES = {
     "base.html": BASE,
