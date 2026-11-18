@@ -79,7 +79,7 @@ You also need a Zotero account and an Anthropic API key (console.anthropic.com).
 |---|---|---|
 | `papers/<author><year>-<title>.md` | One page per paper | Created once by litwiki; **body is never rewritten**. Only Zotero-owned frontmatter fields (title, authors, tags, collections…) are refreshed. |
 | `concepts/<slug>.md` | One page per broad concept | You, on `/app/concepts` (or in a text editor). litwiki only edits between `<!-- litwiki:papers:start/end -->` (append-only list). `search_terms` / `arxiv_categories` / `discover` in the frontmatter steer the daily search. |
-| `reviews/<slug>.md` | One page per project: research question, scope, `search_terms`, `since_year`, `exclude` | You, on the project's Overview page. *Run search now* searches immediately (or set `run: true` for the next hourly run). |
+| `reviews/<slug>.md` | One page per project: research question, scope, `search_terms`, `since_year`, `exclude` | You, on the project's Setup page. *Run search now* searches immediately (or set `run: true` for the next hourly run). |
 | `digests/YYYY-MM-DD.md`, `digests/search-<review>-<date>.md` | Daily / per-review search digest | Approve items in the web Inbox or Swipe page, or Discord (ticking `- [x]` in the file works too). |
 | `notes/<paper-stem>.md` | Your notes on a paper | You, in the web UI. Embedded into the paper page on the site. |
 | `_pdfs/` | PDFs / web snapshots | litwiki. Linked as `[[_pdfs/KEY.pdf#page=7\|p. 7]]` — opens at that page in Obsidian and in the browser. |
@@ -116,7 +116,7 @@ in `config.yaml` (shown read-only on the page). They apply to the general digest
 A **project** is a review page (`reviews/<slug>.md`) whose paper set grows as you work, and it is administered entirely on the web at `/app/projects`.
 Create one with **New project** (title, question, scope, search terms and exclusions; *Suggest terms* drafts the terms and exclusions from your title and question
 with one small Haiku call). Each project has three tabs and a link to its published wiki page:
-- **Overview** (`/app/project/<slug>`): edit the research question, scope, search terms, exclusions and active/archived status; turn the daily digest on or off; and
+- **Setup** (`/app/project/<slug>`): edit the research question, scope, search terms, exclusions and active/archived status; turn the daily digest on or off; and
   **Run search now** (a full arXiv + OpenAlex search with cheap triage, a few cents; the page shows when it finishes). Saving rewrites only those fields and the two
   text sections of the page; the auto-managed linked-papers list and anything else on it are untouched. If they changed elsewhere since you opened the form, the save is
   refused and your text is kept. `litwiki review-new "Title"` still works for the command line.
@@ -128,7 +128,7 @@ results are cached, so reopening the page costs nothing.
 - **Notes** (`/app/project/<slug>/notes`): the free-form whiteboard, described below.
 - **Chat** (`/app/project/<slug>/chat`): ask questions about the project's linked papers and get answers backed by direct quotes (see *Chat with quotes*).
 
-**Daily project digests.** Press *Turn on daily digest* on the project's Overview (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it; the **Archive** button on a project's card in `/app/projects` does the same and moves it to an Archived section). After the
+**Daily project digests.** Press *Turn on daily digest* on the project's Setup tab (or `/app/projects`; or set `daily: true` on its page; `status: archived` pauses it; the **Archive** button on a project's card in `/app/projects` does the same and moves it to an Archived section). After the
 global discovery, the daily job searches each such project's `search_terms` for recent papers only (arXiv: last `discovery.lookback_days` days; OpenAlex: its longer
 window), scores them with the triage model against the project's question and scope, and writes `digests/project-<slug>-<date>.md` (nothing is written when
 nothing qualifies). Papers already seen for the project, ingested, or dismissed are skipped. The picks appear in the swipe queue, Inbox, Discord and the project's
@@ -157,7 +157,7 @@ and fixes the concept pages' paper lists. The kept page's body is not rewritten.
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
 
-A project's **wiki page** (`/reviews/<slug>/`) shows its Notes under four buttons (Overview, Papers, Notes, Chat); the question, scope and search terms live on the Overview tab only.
+A project's **wiki page** (`/reviews/<slug>/`) shows its Notes under four buttons (Setup, Papers, Notes, Chat); the question, scope and search terms live on the Setup tab only.
 
 ## Models and cost
 Each kind of call has its own model setting in `config.yaml` under `llm:` (`summary_model`, `backfill_model`, `manual_model`, `ask_model`, `triage_model`, `chat_model`, `profile_model`,
