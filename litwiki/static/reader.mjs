@@ -4,7 +4,7 @@
 import * as pdfjsLib from "/app/static/vendor/pdfjs/build/pdf.min.mjs";
 import { EventBus, FindState, PDFViewer, PDFLinkService, PDFFindController } from "/app/static/vendor/pdfjs/web/pdf_viewer.mjs";
 import { getStroke } from "/app/static/vendor/perfect-freehand/index.mjs";
-import { newId, isTyping, strokeHit, outlineToPath, findAttempts, History, Outbox } from "/app/static/ink-core.mjs";
+import { newId, isTyping, TouchGestures, strokeHit, outlineToPath, findAttempts, History, Outbox } from "/app/static/ink-core.mjs";
 
 const D = JSON.parse(document.getElementById("reader-data").textContent);
 const $ = id => document.getElementById(id);
@@ -179,6 +179,41 @@ async function flush() {   // make sure everything drawn so far is on the server
 $("dlann").addEventListener("click", async ev => { ev.preventDefault(); const href = ev.currentTarget.href; $("dl").open = false; await flush(); location.href = href; });
 addEventListener("click", ev => { const d = $("dl"); if (d.open && !d.contains(ev.target)) d.open = false; });
 
+// ---------- finger gestures while drawing ----------
+// A drawing tool sets touch-action:none so the stylus can draw, which also stops the browser scrolling for fingers; so a finger
+// drags the page by hand here, and a quick two-finger tap undoes. Touches are ignored while a stylus stroke is in progress.
+const gestures = new TouchGestures();
+let flingId = null;
+function stopFling() { if (flingId) { cancelAnimationFrame(flingId); flingId = null; } }
+function fling(vx, vy) {
+  let last = performance.now();
+  const step = now => {
+    const dt = now - last; last = now;
+    container.scrollLeft -= vx * dt; container.scrollTop -= vy * dt;
+    const decay = Math.exp(-dt / 325); vx *= decay; vy *= decay;
+    flingId = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : null;
+  };
+  flingId = requestAnimationFrame(step);
+}
+const fingerMode = () => tool !== "hand" && !fingerOK;
+container.addEventListener("pointerdown", ev => {
+  if (ev.pointerType !== "touch" || !fingerMode() || drawing) return;
+  stopFling(); gestures.down(ev.pointerId, ev.clientX, ev.clientY, ev.timeStamp);
+});
+container.addEventListener("pointermove", ev => {
+  if (ev.pointerType !== "touch" || !gestures.active || drawing) return;
+  const a = gestures.move(ev.pointerId, ev.clientX, ev.clientY, ev.timeStamp);
+  if (a && a.type === "pan") { container.scrollLeft -= a.dx; container.scrollTop -= a.dy; }
+});
+container.addEventListener("pointerup", ev => {
+  if (ev.pointerType !== "touch" || !gestures.active) return;
+  const a = gestures.up(ev.pointerId, ev.timeStamp);
+  if (!a) return;
+  if (a.type === "undo") { const op = history.undo(); if (op) applyOp(op); }
+  else if (a.type === "fling") fling(a.vx, a.vy);
+});
+container.addEventListener("pointercancel", ev => { if (ev.pointerType === "touch") gestures.reset(); });
+
 // ---------- toolbar ----------
 function setTool(t) {
   if (t !== "hand" && !$("showink").checked) { $("showink").checked = true; applyVisible(); }
@@ -186,8 +221,10 @@ function setTool(t) {
   if (TOOLS[t]) { width = widths[t]; $("width").value = width; }
   document.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   viewerEl.classList.toggle("drawing", t !== "hand");
+  container.classList.toggle("drawmode", t !== "hand");
+  gestures.reset(); stopFling();
   $("hint").textContent = t === "hand" ? "Hand: scroll, zoom and select text." :
-    "Draw with a stylus or mouse. " + (fingerOK ? "" : "Fingers are ignored; switch to Hand to scroll by touch.");
+    "Draw with a stylus or mouse. " + (fingerOK ? "A finger draws too." : "One finger scrolls; tap with two fingers to undo. Switch to Hand to zoom by pinching.");
 }
 function applyVisible() { const on = $("showink").checked; viewerEl.classList.toggle("ink-hidden", !on); store.set("lw-ink-visible:" + D.stem, on ? "1" : "0"); if (!on && tool !== "hand") setTool("hand"); }
 function updateButtons() { $("undo").disabled = !history.canUndo; $("redo").disabled = !history.canRedo; $("count").textContent = strokes.size ? strokes.size + " stroke" + (strokes.size > 1 ? "s" : "") : ""; }
@@ -211,7 +248,26 @@ $("zout").addEventListener("click", () => pdfViewer.decreaseScale());
 $("zfit").addEventListener("click", () => { pdfViewer.currentScaleValue = "page-width"; });
 function showChat(on) { document.body.classList.toggle("nochat", !on); $("chatbtn").classList.toggle("on", on); $("chatbtn").setAttribute("aria-pressed", String(on)); store.set("lw-reader-chat", on ? "1" : "0"); }
 $("chatbtn").addEventListener("click", () => showChat(document.body.classList.contains("nochat")));
-showChat(store.get("lw-reader-chat", "1") !== "0");
+showChat(store.get("lw-reader-chat", matchMedia("(max-width:900px)").matches ? "0" : "1") !== "0");   // on a phone the chat starts closed: it would cover the page
+
+// The toolbars take a lot of a phone screen: a button tucks them away (remembered).
+function showChrome(on) {
+  document.body.classList.toggle("chromeoff", !on); $("chromebtn").setAttribute("aria-expanded", String(on));
+  $("chromebtn").title = on ? "Hide the toolbars" : "Show the toolbars"; store.set("lw-reader-chrome", on ? "1" : "0");
+}
+$("chromebtn").addEventListener("click", () => showChrome(document.body.classList.contains("chromeoff")));
+showChrome(store.get("lw-reader-chrome", "1") !== "0");
+
+// Re-fit the page when the viewer's size changes (toolbars hidden, chat toggled, device turned).
+let refitTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(() => {
+    if (!pdfViewer.pdfDocument) return;
+    const v = pdfViewer.currentScaleValue;
+    if (isNaN(parseFloat(v))) pdfViewer.currentScaleValue = v; else pdfViewer.update();   // "page-width" and friends are re-applied
+  }, 120);
+}).observe(container);
 
 // ---------- jump to a page / a quote (chat citations) ----------
 let findState = null;

@@ -33,12 +33,17 @@ button,input,select{font:inherit}button{cursor:pointer}
 #pane{flex:none;width:27rem;max-width:45vw;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;min-height:0}
 #pane #chat{flex:1;min-height:0;padding:.7rem}
 body.nochat #pane{display:none}
+#chromebtn{display:none;position:absolute;top:.5rem;right:1rem;z-index:15;width:2.4rem;height:2.4rem;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--fg);align-items:center;justify-content:center;box-shadow:0 2px 8px #0003;opacity:.92;cursor:pointer}
+body.chromeoff .ic.up,body:not(.chromeoff) .ic.down{display:none}
+@media(max-width:900px),(pointer:coarse){#chromebtn{display:flex}body.chromeoff #chrome{display:none}}
+#viewerContainer.drawmode{touch-action:none}
 .pdfViewer .page{margin:8px auto;border:1px solid var(--line)}
 .inkLayer{position:absolute;inset:0;pointer-events:none;z-index:6}.inkLayer svg{width:100%;height:100%;display:block;overflow:hidden}
 .drawing .inkLayer{pointer-events:auto;touch-action:none;cursor:crosshair}
 .ink-hidden .inkLayer{display:none}
 @media(max-width:900px){#pane{position:fixed;right:0;top:0;bottom:0;max-width:92vw;z-index:20;box-shadow:-6px 0 20px #0004}}
 </style></head><body>
+<div id="chrome">
 __NAV__
 <div id="rtop" class="bar">
 <a href="/papers/__STEM__/" class="tb" title="Back to the paper page" aria-label="Back to the paper page">←</a><span class="ttl" title="__TITLE__">__TITLE__</span><span class="sep"></span>
@@ -66,10 +71,11 @@ __NAV__
 <span class="sep"></span>
 <div class="grp"><button class="tb" id="undo" type="button" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button><button class="tb" id="redo" type="button" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button></div>
 <span class="sep"></span>
-<label class="tb tg" title="Let a finger draw too. Off by default, so a resting palm or finger does nothing"><input type="checkbox" id="finger" aria-label="Finger draws"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 14a8 8 0 0 1-8 8"/><path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></label>
+<label class="tb tg" title="Let a finger draw too. Off by default: then one finger scrolls and a two-finger tap undoes"><input type="checkbox" id="finger" aria-label="Finger draws"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 14a8 8 0 0 1-8 8"/><path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></label>
 </div>
 <div id="hint"></div>
-<div id="rbody"><div id="left"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div>
+</div>
+<div id="rbody"><div id="left"><button id="chromebtn" type="button" aria-expanded="true" title="Hide the toolbars" aria-label="Show or hide the toolbars"><svg class="ic up" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg><svg class="ic down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div>
 <aside id="pane" aria-label="Chat about this paper">__CHAT__</aside></div>
 <script type="application/json" id="reader-data">__DATA__</script>
 <script type="module" src="/app/static/reader.mjs"></script>
