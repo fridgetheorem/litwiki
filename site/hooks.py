@@ -133,7 +133,7 @@ _BTN = 'style="font-size:.95rem;margin:.25rem"'
 
 def _project_page(here: str, page, config) -> str:
     """A project's wiki page is its Notes (written in the web app), under big buttons into the project's management pages.
-    The question, scope and search terms live on the Overview tab, not here."""
+    The question, scope and search terms live on the Setup tab, not here."""
     slug = posixpath.basename(here).removesuffix(".md")
     title = html.escape(str((page.meta or {}).get("title") or slug))
     note = ""
@@ -143,7 +143,7 @@ def _project_page(here: str, page, config) -> str:
         pass
     base = f"/app/project/{quote(slug)}"
     buttons = "".join(f'<a class="md-button{" md-button--primary" if i == 0 else ""}" {_BTN} href="{base}{path}">{label}</a>'
-                      for i, (label, path) in enumerate((("Overview", ""), ("Papers", "/papers"), ("Notes", "/notes"), ("Chat", "/chat"))))
+                      for i, (label, path) in enumerate((("Setup", ""), ("Papers", "/papers"), ("Notes", "/notes"), ("Chat", "/chat"))))
     archived = str((page.meta or {}).get("status", "active")) == "archived"
     head = f'<p style="text-align:center;margin:1.2rem 0 1.6rem">{buttons}</p>'
     if archived:

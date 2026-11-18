@@ -223,7 +223,7 @@ It runs in the background and the page updates when the site rebuilds (about a m
 {% macro card(p) %}<div class="pc{% if p.status != 'active' %} arch{% endif %}"><h3><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></h3>
 {% if p.question %}<p class="q">{{ p.question }}</p>{% endif %}
 <div class="chips"><span class="chip"><b>{{ p.linked }}</b> paper{{ '' if p.linked == 1 else 's' }}</span>{% if p.waiting %}<span class="chip"><b>{{ p.waiting }}</b> new to screen</span>{% endif %}<span class="chip"><b>{{ p.terms }}</b> search term{{ '' if p.terms == 1 else 's' }}</span>{% if p.status != 'active' %}<span class="chip">archived</span>{% endif %}</div>
-<div class="pl"><a href="/app/project/{{ p.slug }}">Overview</a><a href="/app/project/{{ p.slug }}/papers">Papers</a><a href="/app/project/{{ p.slug }}/notes">Notes</a><a href="/app/project/{{ p.slug }}/chat">Chat</a></div>
+<div class="pl"><a href="/app/project/{{ p.slug }}">Setup</a><a href="/app/project/{{ p.slug }}/papers">Papers</a><a href="/app/project/{{ p.slug }}/notes">Notes</a><a href="/app/project/{{ p.slug }}/chat">Chat</a></div>
 <form method="post" action="/app/project/{{ p.slug }}/daily"><input type="hidden" name="_csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b big {{ 'sec' if p.daily else '' }}"{% if p.status != 'active' %} disabled{% endif %}>{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button></form>
 <div class="foot"><span class="mut" style="font-size:.85rem">{% if p.status != 'active' %}archived: skipped by the daily run{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span>
@@ -1105,9 +1105,9 @@ TABS_CSS = ("<style>.pview{margin:.7rem;border:1px solid var(--line);border-radi
 
 
 def project_tabs(slug: str, active: str, title: str) -> str:
-    """The top bar shared by all of a project's pages: back link, title, and the Overview/Papers/Notes/Chat tabs."""
+    """The top bar shared by all of a project's pages: back link, title, and the Setup/Papers/Notes/Chat tabs."""
     base = f"/app/project/{quote(slug)}"
-    tabs = [("overview", "Overview", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes"), ("chat", "Chat", base + "/chat")]
+    tabs = [("overview", "Setup", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes"), ("chat", "Chat", base + "/chat")]
     links = "".join(f'<a href="{href}"{" class=on" if key == active else ""}>{label}</a>' for key, label, href in tabs)
     return (f'{TABS_CSS}<div class="phead"><div class="ptop"><a href="/app/projects">← Projects</a><span class="pt">{escape(title)}</span></div>'
             f'<div class="ptabs">{links}<span class="sp"></span><a href="/reviews/{quote(slug)}/">Wiki page ↗</a></div></div>')
