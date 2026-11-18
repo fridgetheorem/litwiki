@@ -210,15 +210,27 @@ TEMPLATES = {
 It runs in the background and the page updates when the site rebuilds (about a minute).</span></p></form>
 {% endblock %}""",
     "projects.html": """{% extends "base.html" %}{% block body %}<h1>Projects</h1>
+<style>.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:1rem;align-items:stretch}
+.pc{display:flex;flex-direction:column;gap:.6rem;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem}
+.pc.arch{opacity:.8;border-style:dashed}.pc h3{margin:0;font-size:1.1rem;line-height:1.25}.pc h3 a{color:var(--fg);text-decoration:none}.pc h3 a:hover{color:var(--acc)}
+.pc .q{margin:0;color:var(--mut);font-size:.9rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap}.chip{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:.05rem .6rem;color:var(--mut)}.chip b{color:var(--fg)}
+.pl{display:flex;gap:.4rem;flex-wrap:wrap}.pl a{flex:1;text-align:center;border:1px solid var(--line);border-radius:8px;padding:.3rem .5rem;color:var(--acc);text-decoration:none;font-size:.92rem}.pl a:hover{border-color:var(--acc)}
+.pc form{margin:0}.pc .big{width:100%;padding:.6rem .9rem;font-size:1rem;font-weight:600}.pc .foot{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-top:auto}
+.pc .foot button{background:none;border:0;color:var(--mut);cursor:pointer;font:inherit;font-size:.85rem;padding:0;text-decoration:underline}</style>
 <p class="mut">A project is a literature review that grows over time: link papers you already have, screen new candidates in bulk, and search for more. Open one to edit its question, scope and search terms, run a search, and work with its papers and notes.</p>
 <p><a class="b" href="/app/projects/new">New project</a></p>
+{% macro card(p) %}<div class="pc{% if p.status != 'active' %} arch{% endif %}"><h3><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></h3>
+{% if p.question %}<p class="q">{{ p.question }}</p>{% endif %}
+<div class="chips"><span class="chip"><b>{{ p.linked }}</b> paper{{ '' if p.linked == 1 else 's' }}</span>{% if p.waiting %}<span class="chip"><b>{{ p.waiting }}</b> new to screen</span>{% endif %}<span class="chip"><b>{{ p.terms }}</b> search term{{ '' if p.terms == 1 else 's' }}</span>{% if p.status != 'active' %}<span class="chip">archived</span>{% endif %}</div>
+<div class="pl"><a href="/app/project/{{ p.slug }}">Overview</a><a href="/app/project/{{ p.slug }}/papers">Papers</a><a href="/app/project/{{ p.slug }}/notes">Notes</a><a href="/app/project/{{ p.slug }}/chat">Chat</a></div>
+<form method="post" action="/app/project/{{ p.slug }}/daily"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b big {{ 'sec' if p.daily else '' }}"{% if p.status != 'active' %} disabled{% endif %}>{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button></form>
+<div class="foot"><span class="mut" style="font-size:.85rem">{% if p.status != 'active' %}archived: skipped by the daily run{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span>
+<form method="post" action="/app/project/{{ p.slug }}/archive"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="on" value="{{ '0' if p.status != 'active' else '1' }}"><button>{{ 'Unarchive' if p.status != 'active' else 'Archive' }}</button></form></div></div>{% endmacro %}
 {% if not projects %}<p class="mut">No projects yet.</p>{% endif %}
-{% for p in projects %}<div class="card"><b><a href="/app/project/{{ p.slug }}">{{ p.title }}</a></b>
-<div class="mut">{{ p.linked }} linked paper(s) · {{ p.waiting }} new candidate(s) waiting · {{ p.terms }} search term(s)</div>
-<div><a href="/app/project/{{ p.slug }}">Overview</a> · <a href="/app/project/{{ p.slug }}/papers">Papers</a> · <a href="/app/project/{{ p.slug }}/notes">Notes</a> · <a href="/reviews/{{ p.slug }}/">Wiki page</a></div>
-<form method="post" action="/app/project/{{ p.slug }}/daily" style="margin-top:.4rem"><input type="hidden" name="_csrf" value="{{ csrf }}">
-<input type="hidden" name="on" value="{{ '0' if p.daily else '1' }}"><button class="b {{ 'sec' if p.daily else '' }}">{{ 'Daily digest: ON (turn off)' if p.daily else 'Turn on daily digest' }}</button>
-<span class="mut">{% if p.status != 'active' %}archived projects are skipped{% elif p.daily %}searched every day{% else %}manual searches only{% endif %}</span></form></div>{% endfor %}{% endblock %}""",
+<div class="pgrid">{% for p in projects if p.status == 'active' %}{{ card(p) }}{% endfor %}</div>
+{% if archived %}<h2>Archived</h2><p class="mut">Skipped by the daily run. Unarchive to bring one back.</p><div class="pgrid">{% for p in projects if p.status != 'active' %}{{ card(p) }}{% endfor %}</div>{% endif %}{% endblock %}""",
     "project_form.html": """{% extends "base.html" %}{% block body %}
 <p><a href="/app/projects">← Projects</a></p>
 <h1>New project</h1>
@@ -707,7 +719,8 @@ async def swipe_commit(request: Request) -> Response:
 
 
 def projects_list(request: Request) -> Response:
-    return render(request, "projects.html", title="Projects", projects=project.summary(CFG))
+    rows = sorted(project.summary(CFG), key=lambda p: (p["status"] != "active", p["title"].lower()))
+    return render(request, "projects.html", title="Projects", projects=rows, archived=any(p["status"] != "active" for p in rows))
 
 
 def _project_or_404(request: Request):
@@ -792,6 +805,16 @@ async def project_daily(request: Request) -> Response:
     back = str(request.state.form.get("back", ""))
     back = back if back.startswith("/app/project/") else "/app/projects"
     return redirect(back, f"Daily digest {'on' if on else 'off'} for {rv['title']}.")
+
+
+async def project_archive(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    on = str(request.state.form.get("on", "")) == "1"
+    await run_in_threadpool(project.set_status, CFG, slug, "archived" if on else "active")
+    request_build()
+    return redirect("/app/projects", f"{rv['title']} {'archived' if on else 'is active again'}.")
 
 
 def _exclusion_page(request: Request, f=None, status: int = 200, flash=None) -> Response:
@@ -1401,6 +1424,7 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
         Route("/app/project/{slug}/chat", guard(project_chat_get), methods=["GET"]),
         Route("/app/paper/{stem}/chat", guard(paper_chat_get), methods=["GET"]),
+        Route("/app/project/{slug}/archive", guard(project_archive), methods=["POST"]),
         Route("/app/profile", guard(profile_get), methods=["GET"]),
         Route("/app/profile/{action}", guard(profile_post), methods=["POST"]),
         Route("/app/paper/{stem}/read", guard(paper_read_get), methods=["GET"]),
