@@ -12,7 +12,7 @@ import requests
 from . import exclusions, profile, vault
 from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
 from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
-from .llm import BudgetExceeded, claude
+from .llm import BudgetExceeded, claude, pick_model
 from .notify import bot_active, notify
 
 UA = {"User-Agent": "litwiki/0.1 (personal literature wiki)"}
@@ -200,7 +200,7 @@ def triage(cfg, cands: list[dict], review: dict | None = None, exclude_topics: s
             f"[{n}] {c['title']}\nVenue: {c['venue']} ({c['kind']})\n{c['abstract'][:700]}"
             for n, c in enumerate(batch))
         out = claude(cfg, f"{context}\n\nCANDIDATES:\n{listing}", system=system,
-                     model=cfg["llm"]["triage_model"], schema=TRIAGE_SCHEMA, purpose="triage",
+                     model=pick_model(cfg, "triage"), schema=TRIAGE_SCHEMA, purpose="triage",
                      ref=f"batch{i // 40}")
         for r in out["items"]:
             if 0 <= r["n"] < len(batch):

@@ -13,7 +13,7 @@ from urllib.parse import quote
 from . import vault
 from .cluster import section_text
 from .common import db, log, read_page
-from .llm import BudgetExceeded, claude, spent_purpose_today  # noqa: F401  (BudgetExceeded re-exported)
+from .llm import BudgetExceeded, claude, pick_model, spent_purpose_today  # noqa: F401  (BudgetExceeded re-exported)
 
 MAX_DETAIL = 30
 MAX_CORPUS_CHARS = 500_000          # ~125k tokens; beyond this, ask the user to filter
@@ -162,7 +162,7 @@ def ask(cfg, question: str, concept: str = "", review: str = "", since: int | No
         raise AskError(f"{len(papers)} papers is too many to read at once; narrow it with a concept, review or year.")
 
     rid = secrets.token_hex(4)
-    model = (cfg.get("llm") or {}).get("ask_model") or cfg["llm"]["summary_model"]
+    model = pick_model(cfg, "ask")
     scope = []
     if concept: scope.append(f"concept {concept}")
     if review: scope.append(f"review {review}")

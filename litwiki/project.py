@@ -127,7 +127,7 @@ def pending_analysis(cfg, slug: str, con=None) -> list[dict]:
 def analyze(cfg, slug: str, limit: int = 120, con=None, progress=None) -> dict:
     """Score + explain up to `limit` unanalysed candidates with the triage model, BATCH at a time."""
     from .discover import review_context
-    from .llm import claude
+    from .llm import claude, pick_model
     con, rv = _con(con), get(cfg, slug)
     todo = pending_analysis(cfg, slug, con)[:limit]
     context = review_context(rv)
@@ -139,7 +139,7 @@ def analyze(cfg, slug: str, limit: int = 120, con=None, progress=None) -> dict:
         listing = "\n\n".join(
             f"[{n}] {c['title']} ({c['year'] or 'n.d.'}, {c['venue'] or 'no venue'})\n{c['abstract'][:900] or '(no abstract available)'}"
             for n, c in enumerate(batch))
-        out = claude(cfg, f"{context}\n\nCANDIDATES:\n{listing}", system=SYSTEM, model=cfg["llm"]["triage_model"],
+        out = claude(cfg, f"{context}\n\nCANDIDATES:\n{listing}", system=SYSTEM, model=pick_model(cfg, "screen"),
                      schema=SCHEMA, purpose="project-screen", ref=slug, timeout=300)
         for r in out["items"]:
             if 0 <= r["n"] < len(batch):
@@ -413,10 +413,10 @@ SUGGEST_SCHEMA = {
 
 def suggest(cfg, title: str, question: str, scope: str = "") -> dict:
     """One cheap Haiku call: starting search terms and exclusions the user then edits."""
-    from .llm import claude
+    from .llm import claude, pick_model
     if not (title.strip() or question.strip()):
         raise ProjectError("Fill in the title or the research question first.")
     out = claude(cfg, f"TITLE: {title.strip()}\nRESEARCH QUESTION: {question.strip()[:3000]}\nSCOPE: {scope.strip()[:3000]}",
-                 system=SUGGEST_SYSTEM, model=cfg["llm"]["triage_model"], schema=SUGGEST_SCHEMA,
+                 system=SUGGEST_SYSTEM, model=pick_model(cfg, "screen"), schema=SUGGEST_SCHEMA,
                  purpose="project-suggest", ref=title[:40])
     return {"terms": clean_terms(out["terms"]), "exclude": " ".join(str(out["exclude"]).split())[:1000]}

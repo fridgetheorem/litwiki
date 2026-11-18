@@ -7,7 +7,7 @@ import requests
 
 from . import dedupe, textract, vault
 from .common import db, kv_get, log, read_page, write_page
-from .llm import BudgetExceeded, claude, spent_purpose_today
+from .llm import BudgetExceeded, claude, pick_model, spent_purpose_today
 from .zotero import Zotero, best_attachment, children, collection_paths
 
 SYSTEM = """You are a careful research assistant building a literature-review wiki.
@@ -205,6 +205,12 @@ def find_page(v, doi: str, title: str):
     return None, None
 
 
+def summary_family(purpose: str) -> str:
+    """Which model setting a summary uses: papers you added or attached yourself (manual_model) get their own, bulk Zotero
+    backfill (backfill_model) its own, everything else summary_model."""
+    return {"summary:backfill": "backfill", "summary:manual": "manual", "summary:attach": "manual"}.get(purpose, "summary")
+
+
 def summarise_and_write(cfg, *, key: str, meta: dict, pages, unit, pdf_rel, source: str, purpose: str,
                         page_rel: str | None = None) -> str:
     v = cfg["vault"]
@@ -225,7 +231,7 @@ def summarise_and_write(cfg, *, key: str, meta: dict, pages, unit, pdf_rel, sour
         f"{'Zotero collections: ' + '; '.join(meta.get('collections', [])) if meta.get('collections') else ''}\n\n"
         f"DOCUMENT TEXT ({'full text' if fulltext else 'ABSTRACT ONLY'}; markers are [{unit} N]):\n{text}"
     )
-    s = claude(cfg, prompt, system=SYSTEM, model=cfg["llm"]["summary_model"], schema=SCHEMA,
+    s = claude(cfg, prompt, system=SYSTEM, model=pick_model(cfg, summary_family(purpose)), schema=SCHEMA,
                purpose=purpose, ref=key)
 
     # Bare files (standalone Zotero attachments) have no real metadata: use what's printed in the document.

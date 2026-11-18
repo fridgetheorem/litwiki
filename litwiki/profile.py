@@ -13,7 +13,7 @@ import threading
 from datetime import datetime, timezone
 
 from .common import db, kv_get, kv_set, log
-from .llm import BudgetExceeded, claude, spent_purpose_today
+from .llm import BudgetExceeded, claude, pick_model, spent_purpose_today
 
 KINDS = ("like", "dislike", "term")                     # what the model may write; "pause" items are computed from the numbers
 ALL_KINDS = KINDS + ("pause",)
@@ -301,8 +301,7 @@ def build(cfg) -> dict:
     prompt = (f"{_stats_text(stats(con), titles)}\n\nEXISTING SEARCH TERMS: {', '.join(_existing_terms(cfg)) or '(none)'}\n\n"
               f"CONFIRMED BY THE USER:\n{chr(10).join('- ' + t for t in confirmed) or '(none yet)'}\n\n"
               f"REJECTED BY THE USER (wrong):\n{chr(10).join('- ' + t for t in wrong) or '(none yet)'}\n{listing}")
-    llm = cfg.get("llm") or {}
-    model = llm.get("profile_model") or llm.get("ask_model") or llm["summary_model"]
+    model = pick_model(cfg, "profile")
     ref = f"profile:{kv_get(con, 'profile_runs', 0)}"
     try:
         out = claude(cfg, prompt, system=SYSTEM, model=model, schema=SCHEMA, purpose="profile", ref=ref)

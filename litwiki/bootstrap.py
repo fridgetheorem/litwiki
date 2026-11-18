@@ -5,7 +5,7 @@ from collections import Counter
 from . import vault
 from .common import db, log
 from .ingest import zotero_meta
-from .llm import claude
+from .llm import claude, pick_model
 
 SYSTEM = """You design the concept taxonomy for a researcher's literature-review wiki.
 Given their library (titles grouped by Zotero collection), propose broad research-area concept pages.
@@ -46,7 +46,7 @@ def bootstrap(cfg) -> list[str]:
         lines += [f"- {t}" for t in groups[c]]
     prompt = ("LIBRARY:\n" + "\n".join(lines) +
               "\n\nMOST COMMON TAGS: " + ", ".join(t for t, _ in tags.most_common(60)))
-    out = claude(cfg, prompt, system=SYSTEM, model=cfg["llm"]["summary_model"], schema=SCHEMA,
+    out = claude(cfg, prompt, system=SYSTEM, model=pick_model(cfg, "bootstrap"), schema=SCHEMA,
                  purpose="bootstrap", ref="concepts")
     slugs = []
     for c in out["concepts"]:

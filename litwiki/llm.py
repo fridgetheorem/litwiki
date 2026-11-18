@@ -11,6 +11,21 @@ class BudgetExceeded(Exception):
     pass
 
 
+# Which setting picks the model for each kind of call: llm.<family>_model, falling back along this chain, then summary_model.
+FALLBACK = {"backfill": "summary", "manual": "summary", "bootstrap": "summary", "profile": "ask", "chat": "triage", "screen": "triage"}
+
+
+def pick_model(cfg: dict, family: str) -> str:
+    """The model for a kind of call (summary, backfill, manual, ask, triage, chat, profile, bootstrap, screen)."""
+    llm, seen = cfg.get("llm") or {}, set()
+    while family and family not in seen:
+        seen.add(family)
+        if llm.get(f"{family}_model"):
+            return llm[f"{family}_model"]
+        family = FALLBACK.get(family)
+    return llm["summary_model"]
+
+
 def spent(con, period: str) -> float:
     """period: 'month' or 'day' (UTC, matching sqlite datetime('now'))."""
     fmt = "%Y-%m" if period == "month" else "%Y-%m-%d"
