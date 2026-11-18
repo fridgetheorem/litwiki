@@ -295,6 +295,15 @@ addEventListener("lw-goto", ev => {
   else location.href = d.href;
 });
 
+// ---------- back ----------
+// The arrow goes back to wherever you came from (the paper's page, a project, a chat answer...). Opened with no history to go back to
+// (a new tab, a bookmark, another site), it falls back to the paper's wiki page, which is its href.
+$("back").addEventListener("click", ev => {
+  let from = false;
+  try { from = history.length > 1 && !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) { /* bad referrer */ }
+  if (from) { ev.preventDefault(); history.back(); }
+});
+
 // ---------- go ----------
 eventBus.on("pagesinit", () => {
   pdfViewer.currentScaleValue = "page-width";
