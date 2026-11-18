@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
@@ -105,7 +106,7 @@ table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5
 {% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
-<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>""".replace("__THEME__", THEME_VARS)
+{% block top %}{% endblock %}<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>""".replace("__THEME__", THEME_VARS)
 
 TEMPLATES = {
     "base.html": BASE,
@@ -221,8 +222,7 @@ btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
   q('#terms').value=j.terms.join('\\n'); q('#exclude').value=j.exclude; q('#smsg').textContent='Suggested: edit freely before creating.';
  }catch(e){q('#smsg').textContent='Could not suggest: '+e.message;} btn.disabled=false;};
 </script>{% endblock %}""",
-    "project_overview.html": """{% extends "base.html" %}{% block body %}
-<p><a href="/app/projects">← Projects</a></p><h1>{{ f.title }}</h1>{{ tabs|safe }}
+    "project_overview.html": """{% extends "base.html" %}{% block top %}{{ tabs|safe }}{% endblock %}{% block body %}
 <p class="mut">{{ linked }} linked paper(s){% if f.status != 'active' %} · <b>archived</b> (skipped by the daily run){% endif %}.
 Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>; keep free-form thoughts under <a href="/app/project/{{ slug }}/notes">Notes</a>.</p>
 <form method="post" action="/app/project/{{ slug }}/overview" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -378,8 +378,7 @@ setBusy(false);
 load().catch(e=>msgs.append(el("div","m a err","Could not load the conversation: "+e.message)));
 })();
 </script>""",
-    "project_chat.html": """{% extends "base.html" %}{% block body %}
-<p><a href="/app/projects">← Projects</a></p><h1>{{ title_ }}</h1>{{ tabs|safe }}
+    "project_chat.html": """{% extends "base.html" %}{% block top %}{{ tabs|safe }}{% endblock %}{% block body %}
 <p class="mut">Ask about the {{ n_pdf }} linked paper(s) with a PDF. Every answer is backed by quotes copied from the papers and checked by the server;
 anything it cannot find is removed. Page numbers are PDF page numbers.
 {% if skipped %}<br>Not searched (no PDF): {{ skipped|join('; ') }}.{% endif %}</p>
@@ -642,7 +641,7 @@ def project_papers(request: Request) -> Response:
     page = Path(__file__).with_name("project_page.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "papers")),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "papers", rv["title"])),
                         headers={"Cache-Control": "no-store"})
 
 
@@ -828,7 +827,7 @@ def project_chat_get(request: Request) -> Response:
         return HTMLResponse("No such project.", status_code=404)
     summ = chat.scope_summary(CFG, f"project:{slug}")
     return render(request, "project_chat.html", title=f"Chat: {rv['title']}", title_=rv["title"], slug=slug,
-                  tabs=project_tabs(slug, "chat"), n_pdf=len(summ["with_pdf"]), skipped=summ["without_pdf"],
+                  tabs=project_tabs(slug, "chat", rv["title"]), n_pdf=len(summ["with_pdf"]), skipped=summ["without_pdf"],
                   scope=f"project:{slug}", placeholder="Ask about the papers in this project, e.g. how do they evaluate their tools?")
 
 
@@ -874,24 +873,27 @@ async def project_suggest(request: Request) -> Response:
     return JSONResponse(out)
 
 
-TABS_CSS = ("<style>.ptabs{display:flex;gap:1.1rem;padding:0 1rem;border-bottom:1px solid var(--line);font-size:.95rem;flex-wrap:wrap}"
-            ".ptabs a{padding:.5rem 0;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}"
-            ".ptabs a.on{color:var(--fg);border-bottom-color:var(--acc,var(--ink,currentColor));font-weight:600}.ptabs .sp{flex:1}</style>")
+TABS_CSS = ("<style>.phead{background:var(--bg);border-bottom:1px solid var(--line);padding:.55rem 1rem 0;font:15px/1.4 system-ui,sans-serif;color:var(--fg)}"
+            ".ptop{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap}.ptop a{color:var(--acc);text-decoration:none}.ptop .pt{font-size:1.15rem;font-weight:700}"
+            ".ptabs{display:flex;gap:1.1rem;margin-top:.2rem;flex-wrap:wrap}"
+            ".ptabs a{padding:.45rem 0;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}"
+            ".ptabs a.on{color:var(--fg);border-bottom-color:var(--acc);font-weight:600}.phead .sp{flex:1}</style>")
 
 
-def project_tabs(slug: str, active: str) -> str:
-    """The tab bar shared by a project's pages (also injected into the two standalone pages)."""
+def project_tabs(slug: str, active: str, title: str) -> str:
+    """The top bar shared by all of a project's pages: back link, title, and the Overview/Papers/Notes/Chat tabs."""
     base = f"/app/project/{quote(slug)}"
     tabs = [("overview", "Overview", base), ("papers", "Papers", base + "/papers"), ("notes", "Notes", base + "/notes"), ("chat", "Chat", base + "/chat")]
     links = "".join(f'<a href="{href}"{" class=on" if key == active else ""}>{label}</a>' for key, label, href in tabs)
-    return f'{TABS_CSS}<nav class="ptabs">{links}<span class="sp"></span><a href="/reviews/{quote(slug)}/">Wiki page ↗</a></nav>'
+    return (f'{TABS_CSS}<div class="phead"><div class="ptop"><a href="/app/projects">← Projects</a><span class="pt">{escape(title)}</span></div>'
+            f'<div class="ptabs">{links}<span class="sp"></span><a href="/reviews/{quote(slug)}/">Wiki page ↗</a></div></div>')
 
 
 def _overview_page(request: Request, slug: str, f: dict, status: int = 200, flash=None) -> Response:
     f = {**f, "terms_text": "\n".join(f["terms"]) if isinstance(f["terms"], list) else f["terms"]}
     run = project.SEARCHES.get(slug, {"running": False, "rc": None})
     return render(request, "project_overview.html", status=status, title=f["title"], slug=slug, f=f, flash=flash,
-                  tabs=project_tabs(slug, "overview"), searching=run["running"], search_rc=run["rc"],
+                  tabs=project_tabs(slug, "overview", f["title"]), searching=run["running"], search_rc=run["rc"],
                   linked=len(project.linked_papers(CFG, slug)))
 
 
@@ -963,7 +965,7 @@ def project_notes_get(request: Request) -> Response:
     page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "notes")),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "notes", rv["title"])),
                         headers={"Cache-Control": "no-store"})
 
 
