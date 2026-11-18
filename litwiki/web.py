@@ -87,9 +87,7 @@ BASE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>
 __THEME__
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
-nav{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:var(--card)}
-nav a,nav button{color:var(--acc);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}
-nav .sp{flex:1}main{max-width:60rem;margin:0 auto;padding:1rem}
+main{max-width:60rem;margin:0 auto;padding:1rem}
 h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:2rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem;margin:.6rem 0}
 input[type=text],input[type=password],select,textarea{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
@@ -103,13 +101,18 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}
 label{display:block;margin:.6rem 0 .2rem;font-weight:600}.item{display:flex;gap:.6rem;align-items:flex-start}
 table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line);vertical-align:top}
 </style>{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}</head><body>
-{% if authed %}<nav><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
+{% if authed %}{% include "nav.html" %}{% endif %}
+{% if tabs %}<div class="pview">{{ tabs|safe }}{% endif %}<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main>{% if tabs %}</div>{% endif %}</body></html>""".replace("__THEME__", THEME_VARS)
+
+NAV = """<style>nav.gnav{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:var(--card);font:16px/1.5 system-ui,sans-serif}
+nav.gnav a,nav.gnav button{color:var(--acc);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}nav.gnav .sp{flex:1}nav.gnav form{margin:0}</style>
+<nav class="gnav"><a href="/app/"><b>litwiki</b></a><a href="/app/inbox">Inbox{% if inbox_n %} ({{ inbox_n }}){% endif %}</a><a href="/app/swipe">Swipe</a><a href="/app/projects">Projects</a><a href="/app/concepts">Concepts</a>
 <a href="/app/ask">Ask</a><a href="/app/papers">Papers</a><a href="/clusters/">Map</a><a href="/">Wiki</a><a href="/app/settings">Settings</a><span class="sp"></span>
-<form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>{% endif %}
-{% block top %}{% endblock %}<main>{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.msg }}</div>{% endif %}{% block body %}{% endblock %}</main></body></html>""".replace("__THEME__", THEME_VARS)
+<form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>"""
 
 TEMPLATES = {
     "base.html": BASE,
+    "nav.html": NAV,
     "login.html": """{% extends "base.html" %}{% block body %}<h1>litwiki</h1>
 <form method="post" action="/app/login" class="card"><label for="p">Password</label>
 <input id="p" type="password" name="password" autofocus autocomplete="current-password">
@@ -222,7 +225,7 @@ btn.onclick=async()=>{btn.disabled=true;q('#smsg').textContent='Thinking…';
   q('#terms').value=j.terms.join('\\n'); q('#exclude').value=j.exclude; q('#smsg').textContent='Suggested: edit freely before creating.';
  }catch(e){q('#smsg').textContent='Could not suggest: '+e.message;} btn.disabled=false;};
 </script>{% endblock %}""",
-    "project_overview.html": """{% extends "base.html" %}{% block top %}{{ tabs|safe }}{% endblock %}{% block body %}
+    "project_overview.html": """{% extends "base.html" %}{% block body %}
 <p class="mut">{{ linked }} linked paper(s){% if f.status != 'active' %} · <b>archived</b> (skipped by the daily run){% endif %}.
 Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>; keep free-form thoughts under <a href="/app/project/{{ slug }}/notes">Notes</a>.</p>
 <form method="post" action="/app/project/{{ slug }}/overview" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -378,7 +381,7 @@ setBusy(false);
 load().catch(e=>msgs.append(el("div","m a err","Could not load the conversation: "+e.message)));
 })();
 </script>""",
-    "project_chat.html": """{% extends "base.html" %}{% block top %}{{ tabs|safe }}{% endblock %}{% block body %}
+    "project_chat.html": """{% extends "base.html" %}{% block body %}
 <p class="mut">Ask about the {{ n_pdf }} linked paper(s) with a PDF. Every answer is backed by quotes copied from the papers and checked by the server;
 anything it cannot find is removed. Page numbers are PDF page numbers.
 {% if skipped %}<br>Not searched (no PDF): {{ skipped|join('; ') }}.{% endif %}</p>
@@ -415,6 +418,16 @@ Papers dropped by a keyword are not shown anywhere, so keep keywords specific.</
 ENV = Environment(loader=DictLoader(TEMPLATES), autoescape=select_autoescape(default=True))
 
 
+def _inbox_count() -> int:
+    return sum(not i["ticked"] for _, g in _inbox_groups() for i in g)
+
+
+def global_nav(request: Request) -> str:
+    """The site menu as HTML, for the standalone pages that are not rendered through base.html."""
+    sess = get_session(request)
+    return ENV.get_template("nav.html").render(csrf=(sess or {}).get("csrf", ""), inbox_n=_inbox_count()) if sess else ""
+
+
 def render(request: Request, name: str, status: int = 200, **ctx) -> Response:
     sess = get_session(request)
     flash = ctx.pop("flash", None)  # a form error shown on this response
@@ -423,7 +436,7 @@ def render(request: Request, name: str, status: int = 200, **ctx) -> Response:
             flash = _serializer("flash").loads(tok, max_age=300)
         except BadSignature:
             pass
-    inbox_n = sum(not i["ticked"] for _, g in _inbox_groups() for i in g) if sess else 0
+    inbox_n = _inbox_count() if sess else 0
     html = ENV.get_template(name).render(authed=bool(sess), csrf=(sess or {}).get("csrf", ""), flash=flash,
                                          inbox_n=inbox_n, **ctx)
     resp = HTMLResponse(html, status_code=status)
@@ -641,7 +654,7 @@ def project_papers(request: Request) -> Response:
     page = Path(__file__).with_name("project_page.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "papers", rv["title"])),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "papers", rv["title"])).replace("__NAV__", global_nav(request)),
                         headers={"Cache-Control": "no-store"})
 
 
@@ -873,7 +886,8 @@ async def project_suggest(request: Request) -> Response:
     return JSONResponse(out)
 
 
-TABS_CSS = ("<style>.phead{background:var(--bg);border-bottom:1px solid var(--line);padding:.55rem 1rem 0;font:15px/1.4 system-ui,sans-serif;color:var(--fg)}"
+TABS_CSS = ("<style>.pview{margin:.7rem;border:1px solid var(--line);border-radius:14px;overflow:clip;background:var(--bg)}"
+            ".phead{background:var(--bg);border-bottom:1px solid var(--line);padding:.55rem 1rem 0;font:15px/1.4 system-ui,sans-serif;color:var(--fg)}"
             ".ptop{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap}.ptop a{color:var(--acc);text-decoration:none}.ptop .pt{font-size:1.15rem;font-weight:700}"
             ".ptabs{display:flex;gap:1.1rem;margin-top:.2rem;flex-wrap:wrap}"
             ".ptabs a{padding:.45rem 0;color:var(--mut);text-decoration:none;border-bottom:2px solid transparent}"
@@ -965,7 +979,7 @@ def project_notes_get(request: Request) -> Response:
     page = Path(__file__).with_name("project_notes.html").read_text(encoding="utf-8")
     token = json.dumps(get_session(request)["csrf"])[1:-1]
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "notes", rv["title"])),
+    return HTMLResponse(page.replace("__CSRF__", token).replace("__DATA__", blob).replace("__THEME__", THEME_VARS).replace("__TABS__", project_tabs(slug, "notes", rv["title"])).replace("__NAV__", global_nav(request)),
                         headers={"Cache-Control": "no-store"})
 
 

@@ -6,6 +6,7 @@
 __THEME__
 :root{--paper:var(--bg);--ink:var(--acc);--mark:var(--new);--hl:var(--sel)}
 *{box-sizing:border-box}
+.pview{flex:1;min-height:0;display:flex;flex-direction:column}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh}
 header{flex:none;display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;padding:.55rem 1rem;border-bottom:1px solid var(--line)}
@@ -33,6 +34,7 @@ main{flex:1;min-height:0;display:flex;gap:1rem;padding:1rem}
 .none{color:var(--mut);font-style:italic;font-size:.9rem}
 @media(max-width:860px){main{flex-direction:column}#right{width:auto;height:30%}}
 </style></head><body>
+__NAV__<div class="pview">
 __TABS__
 <header><span class="sp"></span><span id="state"></span>
 <button class="b" id="save" type="button">Save &amp; publish</button></header>
@@ -43,7 +45,7 @@ __TABS__
 <textarea id="t" spellcheck="true" aria-label="Project notes"></textarea>
 <div id="hint">Markdown. Autosaves a few seconds after you stop typing; <b>Save &amp; publish</b> also updates the wiki page. <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd> saves. Notes live in <code>notes/projects/</code> so Obsidian can edit them too.</div></div>
 <aside id="right"><h2>Linked papers: click to insert a link</h2><input id="pf" type="search" placeholder="Filter linked papers"><div id="plist"></div></aside>
-</main>
+</main></div>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 (()=>{
