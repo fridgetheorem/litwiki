@@ -24,3 +24,4 @@ if [ -n "$(grep -s '^DISCORD_BOT_TOKEN=.' "$HOME/.env")" ] && ! pgrep -u "$(id -
     nohup "$LW" discord >> "$L/discord.out" 2>&1 &
 fi
 f="$L/cron.out"; [ -f "$f" ] && [ "$(stat -c%s "$f")" -gt 5000000 ] && tail -c 1000000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+exit 0

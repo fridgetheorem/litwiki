@@ -69,7 +69,8 @@ You also need a Zotero account and an Anthropic API key (console.anthropic.com).
 ### Troubleshooting
 - **"You've hit your session limit" in `litwiki status`:** `ANTHROPIC_API_KEY` is missing or not being read (step 3). Then `litwiki retry`.
 - **Blank page through Tailscale:** the Caddyfile must match any Host header (it does by default); restart Caddy after editing it.
-- **After editing `config.yaml`:** ports and paths are read by the watchdog at start; `pkill caddy` (and `pkill -f "bin/litwiki serve"`) and run `bin/watchdog.sh`.
+- **After editing `config.yaml`:** ports and paths are read by the watchdog at start; `pkill caddy`, run `litwiki restart`, then `bin/watchdog.sh`.
+- **Restart after updating the code:** `litwiki restart` (or `litwiki restart web` / `litwiki restart discord`) stops the web app and bot and starts them again, then waits until the web app answers. The site itself is rebuilt by the hourly job (or `litwiki build`).
 - Logs: `logs/{hourly,daily,manual,watchdog}.log`, `logs/{caddy,web,discord}.out`.
 
 ## Vault layout
@@ -198,7 +199,7 @@ Log in at `<your site>/app/` with `LITWIKI_WEB_PASSWORD` from `~/.env` (the stat
 - **Notes**: `notes/<paper-stem>.md` per paper (so paper bodies stay untouched). The build embeds them in the paper page under "Notes (web)"
   and saving rebuilds the site. If the note was edited elsewhere (Obsidian) since the form loaded, the save is refused rather than overwriting.
 - Runs as `litwiki serve` on 127.0.0.1:8081, started by the watchdog; Caddy proxies `/app/*`. Logs: `logs/serve.log`, `logs/web-jobs.log`.
-- Change the password by editing `~/.env` and restarting (`pkill -f "bin/litwiki serve"`; the watchdog restarts it); all sessions are then logged out.
+- Change the password by editing `~/.env` and restarting (`litwiki restart web`); all sessions are then logged out.
 
 ## Paper map (`/clusters/`)
 Interactive 2-D map of every paper (pan/zoom, hover for TL;DR, click to open), built with the site and linked from both navbars.
