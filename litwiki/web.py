@@ -29,7 +29,7 @@ from starlette.staticfiles import StaticFiles
 mimetypes.add_type("text/javascript", ".mjs")   # ES modules must be served as JavaScript
 mimetypes.add_type("application/wasm", ".wasm")
 
-from . import annotations, ask as askmod, chat, concept, exclusions, manual, notes, project, swipe, vault
+from . import annotations, ask as askmod, chat, concept, exclusions, manual, notes, profile, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -427,6 +427,46 @@ or attach PDFs to the ones you have.</div>{% endif %}{% endblock %}""",
 {% if pdf %}<p class="mut">Answers are backed by quotes copied from this paper and checked by the server; anything it cannot find is removed.
 Each quote links to its PDF page. Your conversation about this paper is kept here.</p>{% include "chat_panel.html" %}
 {% else %}<div class="card">This paper has no PDF, so there is nothing to quote from. <a href="/app/attach/{{ stem }}">Attach a PDF</a> to chat about it.</div>{% endif %}{% endblock %}""",
+    "profile.html": """{% extends "base.html" %}{% block body %}
+<h1>Interest profile</h1>
+<p class="mut">What litwiki has learned from the papers you accept and refuse. Judge each statement: <b>Accurate</b> keeps it, <b>Wrong</b> removes it from use and
+teaches the next rebuild not to repeat it. Likes and dislikes (unless marked wrong) nudge the scores in the daily digest; suggested search phrases are only searched once you
+mark them accurate.</p>
+<div class="card"><b>{{ st.accepted }}</b> accepted · <b>{{ st.refused }}</b> refused ·
+{% if st.built_at %}built {{ st.built_at }}{% if st.new_since %} · <b>{{ st.new_since }}</b> new decision(s) since{% endif %}{% else %}not built yet{% endif %}
+{% if acc.judged or acc.pending %}<br>You have judged {{ acc.judged }} of {{ acc.judged + acc.pending }} learned statements{% if acc.judged %}: <span class="ok">{{ acc.ok }} accurate</span>, <span class="bad">{{ acc.wrong }} wrong</span>{% endif %}.{% endif %}
+<div class="row" style="margin-top:.6rem;align-items:center">
+<form method="post" action="/app/profile/rebuild" style="flex:none;min-width:0"><input type="hidden" name="_csrf" value="{{ csrf }}">
+<button class="b"{% if job.running or not st.enough %} disabled{% endif %}>{% if job.running %}Rebuilding…{% else %}{{ 'Rebuild now' if st.built_at else 'Build the profile' }}{% endif %}</button></form>
+<form method="post" action="/app/profile/apply" style="flex:none;min-width:0"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="on" value="{{ '0' if applying else '1' }}">
+<button class="b sec">{{ 'Stop using it when scoring' if applying else 'Use it when scoring the daily digest' }}</button></form>
+<span class="mut" style="flex:2">{% if applying %}In use for the daily digest.{% else %}<b>Off</b>: the daily digest ignores the profile.{% endif %}
+{% if not st.enough %} Needs at least 5 accepted and 5 refused (20 decisions) to learn from.{% endif %} A rebuild costs about 10 cents; it also runs by itself each day once {{ rebuild_after }} new decisions have piled up.</span></div></div>
+{% for kind, title, blurb in groups %}
+<h2>{{ title }}</h2><p class="mut">{{ blurb }}</p>
+{% for i in by_kind[kind] %}
+<div class="card" style="border-left:4px solid {{ 'var(--ok)' if i.verdict == 'ok' else ('var(--bad)' if i.verdict == 'wrong' else 'var(--line)') }}">
+<div style="{% if i.verdict == 'wrong' %}text-decoration:line-through;opacity:.65{% endif %}"><b>{{ i.text }}</b></div>
+<div class="mut">{% if i.verdict == 'ok' %}<span class="ok">Accurate</span>{% elif i.verdict == 'wrong' %}<span class="bad">Wrong</span>{% else %}Not judged yet{% endif %}
+· {{ 'written by you' if i.source == 'user' else ('from the counts of your decisions' if i.kind == 'pause' else 'based on ' ~ i.evidence|length ~ ' papers you ' ~ ('refused' if i.kind == 'dislike' else 'accepted')) }}</div>
+{% if i.evidence %}<details><summary class="mut">Show the papers</summary><ul style="margin:.3rem 0 .3rem 1rem;padding:0">{% for e in i.evidence %}<li>{{ e.title }}{% if e.decision %} <span class="mut">({{ e.decision }})</span>{% endif %}</li>{% endfor %}</ul></details>{% endif %}
+<div class="row" style="margin-top:.4rem;gap:.5rem;align-items:center">
+{% for v, label, cls in (('ok', 'Accurate', ''), ('wrong', 'Wrong', 'sec')) %}{% if i.verdict != v %}
+<form method="post" action="/app/profile/verdict" style="flex:none;min-width:0"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ i.id }}"><input type="hidden" name="verdict" value="{{ v }}"><button class="b {{ cls }}">{{ label }}</button></form>{% endif %}{% endfor %}
+{% if i.verdict != 'pending' %}<form method="post" action="/app/profile/verdict" style="flex:none;min-width:0"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ i.id }}"><input type="hidden" name="verdict" value="pending"><button class="b sec">Undo</button></form>{% endif %}
+{% if i.source == 'user' %}<form method="post" action="/app/profile/delete" style="flex:none;min-width:0"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ i.id }}"><button class="b sec">Delete</button></form>{% endif %}
+{% if i.kind != 'pause' %}<details style="flex:1;min-width:14rem"><summary class="mut">Edit wording</summary><form method="post" action="/app/profile/edit" class="row" style="gap:.4rem;margin-top:.3rem"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ i.id }}">
+<input type="text" name="text" value="{{ i.text }}" maxlength="240" aria-label="Wording" style="flex:3"><button class="b" style="flex:none;min-width:0">Save</button></form></details>{% endif %}</div></div>
+{% else %}<p class="mut">Nothing here yet.</p>{% endfor %}{% endfor %}
+<h2>Add your own</h2>
+<form method="post" action="/app/profile/add" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}"><div class="row">
+<div style="flex:1;min-width:10rem"><label for="pk">Kind</label><select id="pk" name="kind"><option value="like">Something I like</option><option value="dislike">Something I avoid</option><option value="term">A search phrase to add</option></select></div>
+<div style="flex:4"><label for="pt">Statement</label><input id="pt" type="text" name="text" maxlength="240" placeholder="e.g. empirical studies of fuzzing in industry"></div></div>
+<p><button class="b">Add</button></p></form>
+<h2>What the daily digest uses</h2>
+<details class="card"><summary>Text added to the scoring prompt</summary>{% if block %}<pre style="white-space:pre-wrap">{{ block }}</pre>{% else %}<p class="mut">Nothing{% if not applying %} (the profile is switched off){% endif %}.</p>{% endif %}</details>
+<div class="card">Extra search phrases in the daily search: {% if terms %}{{ terms|join(' · ') }}{% else %}<span class="mut">none (mark suggested phrases accurate to add them)</span>{% endif %}</div>
+{% endblock %}""",
     "settings.html": """{% extends "base.html" %}{% block body %}<h1>Settings</h1>
 <h2>Daily digest: excluded topics</h2>
 <p class="mut">The general daily digest skips these. (Projects have their own exclusions under Projects → Settings.)
@@ -878,6 +918,54 @@ def project_chat_get(request: Request) -> Response:
                   scope=f"project:{slug}", placeholder="Ask about the papers in this project, e.g. how do they evaluate their tools?")
 
 
+def profile_get(request: Request) -> Response:
+    its = profile.items()
+    groups = [("pause", "Searches to pause", "Daily searches that keep finding things you refuse. Accurate stops that concept's daily search (you can resume it here or on its concept page)."),
+              ("like", "What you seem to like", "Topics, methods and kinds of paper that keep turning up among the papers you accepted."),
+              ("dislike", "What you seem to avoid", "What keeps turning up among the papers you refused and rarely among the ones you accepted."),
+              ("term", "Suggested search phrases", "Phrases the daily search could add to find more of what you accept. Only searched once marked accurate.")]
+    job, flash = profile.JOB, None
+    if not job["running"]:        # the outcome of a rebuild that finished since the last visit, shown once
+        if job.get("error"):
+            flash, job["error"] = {"kind": "err", "msg": job["error"]}, ""
+        elif r := job.pop("result", None):
+            flash = {"kind": "ok", "msg": f"Profile rebuilt: {r['items']} statements" + (f" ({r['dropped']} dropped for lack of supporting papers)" if r["dropped"] else "") + f", ${r['cost']:.2f}."}
+    return render(request, "profile.html", title="Interest profile", flash=flash, st=profile.status(), acc=profile.accuracy(its), job=job, groups=groups,
+                  by_kind={k: [i for i in its if i["kind"] == k] for k, _, _ in groups}, applying=profile.applying(), block=profile.prompt_block(),
+                  terms=profile.approved_terms(), rebuild_after=profile.REBUILD_AFTER, refresh=3 if job["running"] else None)
+
+
+async def profile_post(request: Request) -> Response:
+    action, form = request.path_params["action"], request.state.form
+    back = "/app/profile"
+    try:
+        if action == "rebuild":
+            st = profile.status()
+            if not st["enough"]:
+                raise profile.ProfileError("Not enough decisions yet to learn from.")
+            if not profile.start_build(CFG):
+                return redirect(back, "A rebuild is already running.", "err")
+            return redirect(back, "Rebuilding the profile; this page refreshes while it works (a minute or so).")
+        if action == "apply":
+            profile.set_applying(str(form.get("on")) == "1")
+            return redirect(back, "The daily digest will use your profile." if profile.applying() else "The daily digest will ignore the profile.")
+        if action in ("verdict", "edit", "delete"):
+            iid = int(str(form.get("id", "")))
+            if action == "verdict":
+                profile.set_verdict(iid, str(form.get("verdict", "")), CFG)
+            elif action == "edit":
+                profile.edit(iid, str(form.get("text", "")))
+            else:
+                profile.remove(iid)
+            return redirect(back)
+        if action == "add":
+            profile.add(str(form.get("kind", "")), str(form.get("text", "")))
+            return redirect(back, "Added.")
+    except (profile.ProfileError, ValueError) as e:
+        return redirect(back, str(e) if isinstance(e, profile.ProfileError) else "Bad request.", "err")
+    return HTMLResponse("Unknown action.", status_code=404)
+
+
 def paper_chat_get(request: Request) -> Response:
     stem = request.path_params["stem"]
     try:
@@ -1313,6 +1401,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
         Route("/app/project/{slug}/chat", guard(project_chat_get), methods=["GET"]),
         Route("/app/paper/{stem}/chat", guard(paper_chat_get), methods=["GET"]),
+        Route("/app/profile", guard(profile_get), methods=["GET"]),
+        Route("/app/profile/{action}", guard(profile_post), methods=["POST"]),
         Route("/app/paper/{stem}/read", guard(paper_read_get), methods=["GET"]),
         Route("/app/paper/{stem}/pdf", guard(paper_pdf), methods=["GET"]),
         Route("/app/paper/{stem}/annotations", guard(annotations_get), methods=["GET"]),

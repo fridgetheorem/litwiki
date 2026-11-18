@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import feedparser
 import requests
 
-from . import exclusions, vault
+from . import exclusions, profile, vault
 from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
 from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
 from .llm import BudgetExceeded, claude
@@ -184,11 +184,13 @@ def review_context(rv: dict) -> str:
     return f"REVIEW: {rv['title']}\n{text}{excl}\nSEARCH TERMS: {', '.join(rv.get('search_terms') or [])}"
 
 
-def triage(cfg, cands: list[dict], review: dict | None = None, exclude_topics: str = "") -> None:
+def triage(cfg, cands: list[dict], review: dict | None = None, exclude_topics: str = "", profile: str = "") -> None:
     catalog = vault.concept_catalog(cfg["vault"])
     system, context = TRIAGE_SYSTEM, f"CONCEPT CATALOG:\n{catalog}"
     if exclude_topics:
         context += f"\n\nEXCLUDED TOPICS: {exclude_topics}"
+    if profile:
+        context += f"\n\n{profile}"
     if review:
         system = REVIEW_TRIAGE_SYSTEM
         context = f"{review_context(review)}\n\nCONCEPT CATALOG (for the 'concepts' field only):\n{catalog}"
@@ -219,11 +221,12 @@ def discover(cfg) -> dict:
 
     found: dict[str, dict] = {}
     errors = []
-    for slug, fm in vault.concepts(v).items():
-        if not fm.get("discover", True) or not fm.get("search_terms"):
-            continue
-        terms = fm["search_terms"][:6]
-        for name, fn in (("arxiv", lambda: search_arxiv(terms, fm.get("arxiv_categories"), since, dc["max_per_concept"])),
+    searches = [(slug, fm.get("search_terms")[:6], fm.get("arxiv_categories")) for slug, fm in vault.concepts(v).items()
+                if fm.get("discover", True) and fm.get("search_terms")]
+    if extra := profile.approved_terms(con):            # search phrases the user confirmed on the profile page
+        searches.append(("profile", extra[:6], None))
+    for slug, terms, cats in searches:
+        for name, fn in (("arxiv", lambda: search_arxiv(terms, cats, since, dc["max_per_concept"])),
                          ("openalex", lambda: search_openalex(terms, since_oa, dc["max_per_concept"], dc.get("openalex_mailto", "")))):
             try:
                 for c in fn():
@@ -250,7 +253,7 @@ def discover(cfg) -> dict:
         notify(f"Discovery: {len(errors)} source queries failed (e.g. {errors[0][:200]})", level="warn")
     if fresh:
         try:
-            triage(cfg, fresh, exclude_topics=rules["topics"])
+            triage(cfg, fresh, exclude_topics=rules["topics"], profile=profile.prompt_block(con))
         except BudgetExceeded:
             return {"raw": len(found), "new": len(fresh), "excluded": len(dropped), "digest": 0}
     for c in fresh:
@@ -296,7 +299,8 @@ def write_digest(cfg, picked: list[dict], review: dict | None = None, prefix: st
         groups.setdefault(main, []).append(c)
     for slug, cs in groups.items():
         if slug or not review:
-            body += [f"## [[concepts/{slug}|{titles.get(slug, slug)}]]", ""]
+            body += [f"## [[concepts/{slug}|{titles[slug]}]]" if slug in titles else
+                     f"## {'Suggested by your profile' if slug == 'profile' else slug}", ""]
         for c in cs:
             au = ", ".join(c["authors"][:3]) + (" et al." if len(c["authors"]) > 3 else "")
             links = [f"[abstract]({c['url']})"]
