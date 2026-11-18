@@ -103,6 +103,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     thread INTEGER DEFAULT 0       -- id of the thread's first question; 0 = conversations from before threads existed
 );
 CREATE INDEX IF NOT EXISTS chat_scope ON chat_messages(scope, id);
+CREATE TABLE IF NOT EXISTS profile_items (    -- the learned reading-interest profile: statements the user can confirm or reject
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,            -- like | dislike | term (a search phrase to add to the daily search)
+    text TEXT NOT NULL,
+    evidence TEXT DEFAULT '[]',    -- JSON [{"id": candidate id, "title": ..., "decision": "accepted"|"refused"}]
+    verdict TEXT DEFAULT 'pending',-- pending | ok | wrong (the user's judgement of the statement)
+    source TEXT DEFAULT 'auto',    -- auto (model-written) | user (written or edited by the user)
+    created TEXT DEFAULT (datetime('now')),
+    updated TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS annotations (     -- the reader's own free-form layer (pen / highlighter strokes), one row per stroke
     id TEXT PRIMARY KEY,           -- chosen by the browser, so retries and several devices merge without clashes
     stem TEXT NOT NULL,            -- paper page stem

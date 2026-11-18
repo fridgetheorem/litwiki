@@ -351,6 +351,21 @@ def cmd_restart(cfg, a):
     sys.exit(bad)
 
 
+def cmd_profile(cfg, a):
+    from . import profile
+    if a.build:
+        try:
+            r = profile.build(cfg)
+        except profile.ProfileError as e:
+            sys.exit(str(e))
+        print(f"profile rebuilt: {r['items']} items ({r['dropped']} dropped as unsupported), ${r['cost']:.3f}")
+    st = profile.status()
+    print(f"decisions: {st['accepted']} accepted, {st['refused']} refused; built {st['built_at'] or 'never'}"
+          + (f" ({st['new_since']} new since)" if st["new_since"] is not None else "") + f"; applied to scoring: {profile.applying()}")
+    for i in profile.items():
+        print(f"  [{i['kind']:7}] [{i['verdict']:7}] {i['text']}  ({len(i['evidence'])} papers)")
+
+
 def cmd_hourly(cfg, a):
     """Zotero sync -> ingest new/approved items -> rebuild site if the vault changed."""
     from .discover import ingest_approved, run_requested_searches
@@ -389,7 +404,9 @@ def cmd_hourly(cfg, a):
 
 def cmd_daily(cfg, a):
     from .discover import discover, run_daily_projects
+    from . import profile
     with run_lock():
+        profile.refresh_if_stale(cfg)      # learn from the decisions made since the last time (never fails the run)
         discover(cfg)
         projects = run_daily_projects(cfg)
         if projects:
@@ -458,6 +475,9 @@ def main():
     sp.add_argument("--no-detail", action="store_true", help="never read findings/limitations (single, cheaper call)")
     sp.set_defaults(f=cmd_ask)
     sub.add_parser("discord", help="run the Discord bot (digest posts with buttons, /add, /status)").set_defaults(f=cmd_discord)
+    sp = sub.add_parser("profile", help="show the learned reading-interest profile (--build to rebuild it from your accept/refuse decisions)")
+    sp.add_argument("--build", action="store_true")
+    sp.set_defaults(f=cmd_profile)
     sp = sub.add_parser("restart", help="restart the web app and Discord bot (picks up new code)")
     sp.add_argument("which", nargs="?", choices=["all", "web", "discord"], default="all")
     sp.set_defaults(f=cmd_restart)
