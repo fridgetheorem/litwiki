@@ -43,6 +43,7 @@ llm:
   summary_model: sonnet      # paper summaries + claim extraction
   ask_model: sonnet          # `litwiki ask`, web Ask page, Discord /ask
   triage_model: haiku        # discovery relevance scoring
+  chat_model: haiku          # paper/project chat (quote retrieval; the server checks every quote). Defaults to triage_model
   max_text_chars: 120000     # fulltext sent per paper (~30k tokens); longer docs are truncated
   per_call_budget_usd: 1.00  # hard cap passed to `claude --max-budget-usd`
 

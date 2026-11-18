@@ -349,7 +349,8 @@ def answer(cfg, scope: str, question: str, history: list[tuple[str, str]]) -> di
     """The whole pipeline for one question (no database): returns {html, quotes, dropped, cost, n_papers, skipped}."""
     papers, skipped = scope_papers(cfg, scope)
     prompt = build_prompt(cfg, papers, question, history)
-    model = (cfg.get("llm") or {}).get("ask_model") or cfg["llm"]["summary_model"]
+    llm_cfg = cfg.get("llm") or {}
+    model = llm_cfg.get("chat_model") or llm_cfg.get("triage_model") or llm_cfg["summary_model"]   # the cheap model: retrieval plus quoting, checked by the server anyway
     ref = f"chat:{secrets.token_hex(4)}"
     out = claude(cfg, prompt, system=SYSTEM, model=model, schema=SCHEMA, purpose="chat", ref=ref)
     kept, dropped = verify(cfg, papers, out.get("quotes") or [])

@@ -290,7 +290,9 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <style>
 #chat{display:grid;grid-template-columns:minmax(0,17rem) minmax(0,1fr);gap:1.2rem;align-items:start}
 @media(max-width:800px){ #chat{grid-template-columns:minmax(0,1fr)}#side{position:static;max-height:14rem}}
-#chat[data-compact]{grid-template-columns:minmax(0,1fr)}#chat[data-compact] #side{position:static;max-height:9rem}
+#chat[data-compact]{display:flex;flex-direction:column;height:100%;min-height:0;gap:.6rem}
+#chat[data-compact] #side{position:static;flex:none;max-height:8.5rem}
+#chat[data-compact] #main{flex:1;min-height:0}#chat[data-compact] #msgs{flex:1;min-height:0;overflow:auto;padding-right:.2rem}
 #side{position:sticky;top:.6rem;max-height:calc(100vh - 1.4rem);overflow:auto;display:flex;flex-direction:column;gap:.6rem}
 #threads{display:flex;flex-direction:column;gap:.7rem}
 .th{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}.th.on{border-color:var(--acc)}
@@ -362,12 +364,14 @@ function renderSide(){
       b.onclick=()=>go(t.id,u.id);box.append(b)});
     side.append(box)})}
 function renderMain(){
+  const st=msgs.scrollTop,stick=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<40;   // when the list scrolls itself (the reader pane), keep its place
   msgs.textContent="";
   if(cur===null){thead.textContent="New thread. It does not see your earlier threads, so you can change direction freely.";return}
   thead.textContent=cur===0?"Earlier conversation (from before threads). Ask here to continue it, or start a new thread.":"Questions in this thread see only this thread.";
-  all.filter(m=>m.thread===cur).forEach(m=>msgs.append(bubble(m)))}
+  all.filter(m=>m.thread===cur).forEach(m=>msgs.append(bubble(m)));
+  msgs.scrollTop=stick?msgs.scrollHeight:st}
 function render(){renderSide();renderMain();if(jump){const e=document.getElementById("m"+jump);jump=null;if(e){e.scrollIntoView({block:"start"});e.classList.add("flash");setTimeout(()=>e.classList.remove("flash"),1500)}}}
-function go(t,mid){cur=t;jump=mid||null;render();if(!mid)window.scrollTo(0,0);q.focus()}
+function go(t,mid){cur=t;jump=mid||null;render();if(!mid){window.scrollTo(0,0);msgs.scrollTop=0}q.focus()}
 async function fetchAll(){const r=await fetch("/app/chat/messages?scope="+encodeURIComponent(scope)+"&after=0");const j=await r.json();all=j.messages||[];return all}
 function running(){return all.some(m=>m.status==="running")}
 async function load(){
@@ -873,13 +877,28 @@ def _reader_paper(request: Request):
     return stem, info
 
 
-def paper_pdf(request: Request) -> Response:
-    """The paper's PDF, behind the login, for the reader."""
+async def paper_pdf(request: Request) -> Response:
+    """The paper's PDF, behind the login. ?download=1 sends it as a file; with &annotated=1 your pen and highlighter strokes
+    are added to it as standard PDF ink annotations (the stored original is never changed)."""
     stem, info = _reader_paper(request)
     if not info:
         return HTMLResponse("No PDF for this paper.", status_code=404)
-    return FileResponse(CFG["vault"] / info["pdf"], media_type="application/pdf",
-                        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+    path = CFG["vault"] / info["pdf"]
+    q = request.query_params
+    if q.get("download") != "1":
+        return FileResponse(path, media_type="application/pdf",
+                            headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+    if q.get("annotated") != "1":
+        return FileResponse(path, media_type="application/pdf", filename=f"{stem}.pdf", content_disposition_type="attachment")
+    try:
+        data = await run_in_threadpool(lambda: annotations.annotated_pdf(path, annotations.items(stem)))
+    except annotations.AnnotationError as e:
+        return HTMLResponse(escape(str(e)), status_code=400)
+    except Exception as e:
+        log.exception("annotated export failed")
+        return HTMLResponse("Could not add the annotations to this PDF: " + escape(str(e)[:200]), status_code=500)
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="{stem}-annotated.pdf"', "Cache-Control": "no-store"})
 
 
 def paper_read_get(request: Request) -> Response:
