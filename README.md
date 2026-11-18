@@ -157,6 +157,17 @@ and fixes the concept pages' paper lists. The kept page's body is not rewritten.
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
 
+## Interest profile (learning from what you accept and refuse)
+`/app/profile` (Overview menu) shows what litwiki has learned from the daily-digest papers you accepted (ticked, swiped right, added by hand) and refused. A model reads the
+recent decisions together with exact accept rates per search concept and venue and writes **likes**, **dislikes** and **search phrases**; every statement must cite enough real
+decisions (the server checks the ids, so evidence cannot be invented) and the page lets you open the papers behind it. Separately, concepts whose daily search almost never
+yields anything you accept are suggested as **searches to pause**, computed from the counts alone.
+
+You judge each statement: **Accurate** keeps it (for a pause suggestion it also sets `discover: false` on that concept, and undoing resumes it), **Wrong** stops it being used and
+stops it being proposed again, and you can edit the wording or add your own. In use: likes and dislikes that are not marked wrong nudge the scores in the daily digest (a switch on the
+page turns this off), and only search phrases you marked accurate are added to the daily search. The profile rebuilds on request, with `litwiki profile --build`, and in the daily
+job once 15 new decisions have piled up; a rebuild costs about 10 to 15 cents (`budget.profile_daily_usd`, model `llm.profile_model`, default `ask_model`). `litwiki profile` prints it.
+
 ## Reader and annotations
 Open any paper that has a PDF in the reader (`/app/paper/<stem>/read`: **Read** in the web Papers list, **Read and annotate** on the paper's wiki page and its chat page).
 It shows the PDF with [pdf.js](https://github.com/mozilla/pdf.js) and the paper's chat in a side pane; clicking a quote in an answer jumps to its page and highlights the passage
