@@ -246,9 +246,10 @@ $("pageno").addEventListener("change", () => { const n = parseInt($("pageno").va
 $("zin").addEventListener("click", () => pdfViewer.increaseScale());
 $("zout").addEventListener("click", () => pdfViewer.decreaseScale());
 $("zfit").addEventListener("click", () => { pdfViewer.currentScaleValue = "page-width"; });
-function showChat(on) { document.body.classList.toggle("nochat", !on); $("chatbtn").classList.toggle("on", on); $("chatbtn").setAttribute("aria-pressed", String(on)); store.set("lw-reader-chat", on ? "1" : "0"); }
+// The chat is a drawer behind the button at the top right of the viewer: closed until opened (remembered).
+function showChat(on) { document.body.classList.toggle("nochat", !on); $("chatbtn").classList.toggle("on", on); $("chatbtn").setAttribute("aria-pressed", String(on)); store.set("lw-reader-drawer", on ? "1" : "0"); }
 $("chatbtn").addEventListener("click", () => showChat(document.body.classList.contains("nochat")));
-showChat(store.get("lw-reader-chat", matchMedia("(max-width:900px)").matches ? "0" : "1") !== "0");   // on a phone the chat starts closed: it would cover the page
+showChat(store.get("lw-reader-drawer", "0") === "1");
 
 // The toolbars take a lot of a phone screen: a button tucks them away (remembered).
 function showChrome(on) {
