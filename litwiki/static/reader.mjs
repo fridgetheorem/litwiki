@@ -263,7 +263,7 @@ let refitTimer = null;
 new ResizeObserver(() => {
   clearTimeout(refitTimer);
   refitTimer = setTimeout(() => {
-    if (!pdfViewer.pdfDocument) return;
+    if (!pdfViewer.pagesCount) return;   // no document yet
     const v = pdfViewer.currentScaleValue;
     if (isNaN(parseFloat(v))) pdfViewer.currentScaleValue = v; else pdfViewer.update();   // "page-width" and friends are re-applied
   }, 120);
