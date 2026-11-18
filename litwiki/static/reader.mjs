@@ -300,8 +300,9 @@ addEventListener("lw-goto", ev => {
 // (a new tab, a bookmark, another site), it falls back to the paper's wiki page, which is its href.
 $("back").addEventListener("click", ev => {
   let from = false;
-  try { from = history.length > 1 && !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) { /* bad referrer */ }
-  if (from) { ev.preventDefault(); history.back(); }
+  // window.history, spelled out: the undo stack above is a module variable that is also called "history"
+  try { from = window.history.length > 1 && !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) { /* bad referrer */ }
+  if (from) { ev.preventDefault(); window.history.back(); }
 });
 
 // ---------- go ----------
