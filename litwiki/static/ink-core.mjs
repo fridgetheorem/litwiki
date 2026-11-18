@@ -123,3 +123,42 @@ export class Outbox {
     ops.add.forEach(s => this.known.delete(s.id));
   }
 }
+
+// Finger gestures while a drawing tool is active (touch-action is "none" there so the stylus can draw, so finger scrolling
+// is done by hand): one finger drags the page (and keeps gliding when let go), a quick tap with two fingers means undo.
+// Pure state machine: feed it pointer events, act on what it returns. Coordinates in px, times in ms.
+export class TouchGestures {
+  constructor({ tapMs = 350, slop = 10, panSlop = 6 } = {}) { Object.assign(this, { tapMs, slop, panSlop }); this.reset(); }
+  reset() { this.touches = new Map(); this.g = null; }
+  down(id, x, y, t) {
+    if (this.touches.size === 0) this.g = { t0: t, maxN: 0, moved: false, panning: false, vx: 0, vy: 0, lastMove: t };
+    this.touches.set(id, { x0: x, y0: y, lx: x, ly: y, lt: t });
+    this.g.maxN = Math.max(this.g.maxN, this.touches.size);
+  }
+  move(id, x, y, t) {
+    const p = this.touches.get(id), g = this.g;
+    if (!p || !g) return null;
+    const dx = x - p.lx, dy = y - p.ly, dt = Math.max(1, t - p.lt);
+    const first = !g.panning;
+    p.lx = x; p.ly = y; p.lt = t;
+    if (Math.hypot(x - p.x0, y - p.y0) > this.slop) g.moved = true;
+    if (g.maxN >= 2) return null;                                   // two or more fingers: a tap, not a drag
+    if (first) {
+      if (Math.hypot(x - p.x0, y - p.y0) < this.panSlop) return null;   // ignore finger jitter
+      g.panning = true;
+      g.lastMove = t;
+      return { type: "pan", dx: x - p.x0, dy: y - p.y0 };           // catch up on what was held back
+    }
+    g.vx = 0.7 * g.vx + 0.3 * (dx / dt); g.vy = 0.7 * g.vy + 0.3 * (dy / dt); g.lastMove = t;
+    return { type: "pan", dx, dy };
+  }
+  up(id, t) {
+    if (!this.touches.delete(id) || this.touches.size > 0) return null;
+    const g = this.g; this.g = null;
+    if (!g) return null;
+    if (g.maxN === 2 && !g.moved && t - g.t0 <= this.tapMs) return { type: "undo" };
+    if (g.panning && g.maxN === 1 && t - g.lastMove < 80 && Math.hypot(g.vx, g.vy) > 0.05) return { type: "fling", vx: g.vx, vy: g.vy };
+    return null;
+  }
+  get active() { return this.touches.size > 0; }
+}
