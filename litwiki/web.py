@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import mimetypes
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -21,10 +22,14 @@ from jinja2 import DictLoader, Environment, select_autoescape
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
-from starlette.routing import Route
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
-from . import ask as askmod, chat, concept, exclusions, manual, notes, project, swipe, vault
+mimetypes.add_type("text/javascript", ".mjs")   # ES modules must be served as JavaScript
+mimetypes.add_type("application/wasm", ".wasm")
+
+from . import annotations, ask as askmod, chat, concept, exclusions, manual, notes, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import tick_items
 from .llm import spent
@@ -158,7 +163,7 @@ TEMPLATES = {
     "papers.html": """{% extends "base.html" %}{% block body %}<h1>Papers</h1>
 <form method="get" action="/app/papers"><input type="text" name="q" value="{{ q }}" placeholder="Search titles / authors" autofocus></form>
 <table>{% for p in papers %}<tr><td><a href="/papers/{{ p.stem }}/">{{ p.title }}</a><div class="mut">{{ p.authors }} {{ p.year }}</div></td>
-<td><a href="/app/notes/{{ p.stem }}">{% if p.has_note %}Edit notes{% else %}Add notes{% endif %}</a>{% if p.chat %} · <a href="/app/paper/{{ p.stem }}/chat">Chat</a>{% endif %}</td></tr>{% endfor %}</table>
+<td><a href="/app/notes/{{ p.stem }}">{% if p.has_note %}Edit notes{% else %}Add notes{% endif %}</a>{% if p.chat %} · <a href="/app/paper/{{ p.stem }}/read">Read</a> · <a href="/app/paper/{{ p.stem }}/chat">Chat</a>{% endif %}</td></tr>{% endfor %}</table>
 {% if more %}<p class="mut">Showing the first {{ papers|length }}; refine the search.</p>{% endif %}{% endblock %}""",
     "ask.html": """{% extends "base.html" %}{% block body %}<h1>Ask the library</h1>
 <form method="post" action="/app/ask" class="card"><input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -277,7 +282,7 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <label for="overview">Overview <span class="mut">(your synthesis; markdown. The paper list below it is maintained by litwiki)</span></label>
 <textarea id="overview" name="overview" rows="10">{{ f.overview }}</textarea>{% endif %}
 <p><button class="b">{% if mode == 'new' %}Create concept{% else %}Save{% endif %}</button></p></form>{% endblock %}""",
-    "chat_panel.html": """<div id="chat" data-scope="{{ scope }}" data-csrf="{{ csrf }}">
+    "chat_panel.html": """<div id="chat" data-scope="{{ scope }}" data-csrf="{{ csrf }}"{% if compact %} data-compact{% endif %}{% if reader %} data-reader{% endif %}>
 <nav id="side" aria-label="Conversations"><button class="b" id="newt" type="button">+ New thread</button><div id="threads"></div></nav>
 <div id="main"><div id="thead" class="mut"></div><div id="msgs" aria-live="polite"></div>
 <form id="cf"><textarea id="cq" rows="2" placeholder="{{ placeholder }}" maxlength="2000"></textarea>
@@ -285,6 +290,7 @@ Link or screen papers under <a href="/app/project/{{ slug }}/papers">Papers</a>;
 <style>
 #chat{display:grid;grid-template-columns:minmax(0,17rem) minmax(0,1fr);gap:1.2rem;align-items:start}
 @media(max-width:800px){ #chat{grid-template-columns:minmax(0,1fr)}#side{position:static;max-height:14rem}}
+#chat[data-compact]{grid-template-columns:minmax(0,1fr)}#chat[data-compact] #side{position:static;max-height:9rem}
 #side{position:sticky;top:.6rem;max-height:calc(100vh - 1.4rem);overflow:auto;display:flex;flex-direction:column;gap:.6rem}
 #threads{display:flex;flex-direction:column;gap:.7rem}
 .th{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}.th.on{border-color:var(--acc)}
@@ -309,6 +315,7 @@ const root=document.getElementById("chat"),scope=root.dataset.scope,csrf=root.da
 const q=document.getElementById("cq"),btn=document.getElementById("cs"),hint=document.getElementById("chint");
 const side=document.getElementById("threads"),thead=document.getElementById("thead");
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+const readerUrl=(stem,page,quote)=>"/app/paper/"+encodeURIComponent(stem)+"/read?page="+Math.max(1,page|0)+"&find="+encodeURIComponent(String(quote||"").split(/\\s+/).filter(Boolean).slice(0,14).join(" "));
 let all=[],cur=null,timer=null,busy=false,jump=null;   // cur: thread id, or null = a new thread not started yet
 function setBusy(b){busy=b;btn.disabled=b;hint.textContent=b?"Reading the papers… the first question can take a minute while text is extracted.":"Enter to send, Shift+Enter for a new line."}
 function bubble(m){
@@ -326,8 +333,12 @@ function bubble(m){
       const li=el("li");li.id="c"+m.id+"-"+x.n;
       const body=el("q");body.textContent=x.quote;
       const src=el("span","src");src.append("["+x.n+"] ");
-      const a=el("a",null,x.label+", p. "+x.page);a.href=x.pdf;a.target="_blank";a.rel="noopener";src.append(a);
-      src.append(" · ");const w=el("a",null,"paper page");w.href=x.wiki;src.append(w);
+      const rd=readerUrl(x.paper,x.page,x.quote);
+      const a=el("a",null,x.label+", p. "+x.page);a.href=rd;src.append(a);
+      if(root.hasAttribute("data-reader"))a.addEventListener("click",ev=>{ev.preventDefault();window.dispatchEvent(new CustomEvent("lw-goto",{detail:{paper:x.paper,page:x.page,quote:x.quote,href:rd}}))});
+      else{a.title="Open in the reader at this passage"}
+      src.append(" · ");const w=el("a",null,"PDF");w.href=x.pdf;w.target="_blank";w.rel="noopener";src.append(w);
+      src.append(" · ");const w2=el("a",null,"paper page");w2.href=x.wiki;src.append(w2);
       li.append(body,src);ol.append(li)});
     e.append(ol)}
   const notes=[];
@@ -388,7 +399,7 @@ anything it cannot find is removed. Page numbers are PDF page numbers.
 {% if n_pdf %}{% include "chat_panel.html" %}{% else %}<div class="card">No linked paper has a PDF yet. Link papers under <a href="/app/project/{{ slug }}/papers">Papers</a>,
 or attach PDFs to the ones you have.</div>{% endif %}{% endblock %}""",
     "paper_chat.html": """{% extends "base.html" %}{% block body %}
-<p><a href="/papers/{{ stem }}/">← {{ paper_title }}</a>{% if pdf %} · <a href="/{{ pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</p>
+<p><a href="/papers/{{ stem }}/">← {{ paper_title }}</a>{% if pdf %} · <a href="/app/paper/{{ stem }}/read">Read and annotate</a> · <a href="/{{ pdf }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</p>
 <h1>Chat: {{ paper_title }}</h1>
 {% if pdf %}<p class="mut">Answers are backed by quotes copied from this paper and checked by the server; anything it cannot find is removed.
 Each quote links to its PDF page. Your conversation about this paper is kept here.</p>{% include "chat_panel.html" %}
@@ -856,6 +867,56 @@ def paper_chat_get(request: Request) -> Response:
                   placeholder="Ask about this paper, e.g. what are the main limitations?")
 
 
+def _reader_paper(request: Request):
+    stem = request.path_params["stem"]
+    info = chat.paper_info(CFG, stem)
+    return stem, info
+
+
+def paper_pdf(request: Request) -> Response:
+    """The paper's PDF, behind the login, for the reader."""
+    stem, info = _reader_paper(request)
+    if not info:
+        return HTMLResponse("No PDF for this paper.", status_code=404)
+    return FileResponse(CFG["vault"] / info["pdf"], media_type="application/pdf",
+                        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
+def paper_read_get(request: Request) -> Response:
+    stem, info = _reader_paper(request)
+    if not info:
+        return HTMLResponse("This paper has no PDF to read. <a href=\"/app/attach/%s\">Attach one</a>." % escape(stem), status_code=404)
+    sess = get_session(request)
+    data = {"stem": stem, "title": info["title"], "csrf": sess["csrf"], "pdfUrl": f"/app/paper/{quote(stem)}/pdf",
+            "annUrl": f"/app/paper/{quote(stem)}/annotations"}
+    chat_html = ENV.get_template("chat_panel.html").render(scope=f"paper:{stem}", csrf=sess["csrf"], compact=True, reader=True,
+                                                           placeholder="Ask about this paper; quotes jump to the page.")
+    page = Path(__file__).with_name("reader.html").read_text(encoding="utf-8")
+    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    for k, v in (("__THEME__", THEME_VARS), ("__NAV__", global_nav(request)), ("__TITLE__", escape(info["title"])),
+                 ("__STEM__", quote(stem)), ("__CHAT__", chat_html), ("__DATA__", blob)):
+        page = page.replace(k, v)
+    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+
+def annotations_get(request: Request) -> Response:
+    stem, info = _reader_paper(request)
+    if not info:
+        return JSONResponse({"error": "No PDF for this paper."}, status_code=404)
+    return JSONResponse({"items": annotations.items(stem)}, headers={"Cache-Control": "no-store"})
+
+
+async def annotations_post(request: Request) -> Response:
+    stem, info = _reader_paper(request)
+    if not info:
+        return JSONResponse({"error": "No PDF for this paper."}, status_code=404)
+    try:
+        out = await run_in_threadpool(annotations.apply, stem, str(request.state.form.get("ops", "")))
+    except annotations.AnnotationError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse(out)
+
+
 def project_new_get(request: Request) -> Response:
     return render(request, "project_form.html", title="New project", mode="new", action="/app/projects/new",
                   f={"title": "", "question": "", "scope": "", "terms": "", "exclude": ""})
@@ -1214,6 +1275,11 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/daily", guard(project_daily), methods=["POST"]),
         Route("/app/project/{slug}/chat", guard(project_chat_get), methods=["GET"]),
         Route("/app/paper/{stem}/chat", guard(paper_chat_get), methods=["GET"]),
+        Route("/app/paper/{stem}/read", guard(paper_read_get), methods=["GET"]),
+        Route("/app/paper/{stem}/pdf", guard(paper_pdf), methods=["GET"]),
+        Route("/app/paper/{stem}/annotations", guard(annotations_get), methods=["GET"]),
+        Route("/app/paper/{stem}/annotations", guard(annotations_post), methods=["POST"]),
+        Mount("/app/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static"),
         Route("/app/chat/messages", guard(chat_messages), methods=["GET"]),
         Route("/app/chat/send", guard(chat_send), methods=["POST"]),
         Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
