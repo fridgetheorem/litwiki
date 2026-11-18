@@ -26,6 +26,28 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Redire
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+STATIC_DIR = Path(__file__).with_name("static")
+
+
+class Static(StaticFiles):
+    """Our own scripts are revalidated on every load (browsers otherwise reuse a stale copy for hours after a deploy); the
+    vendored libraries never change under their URL, so they may be cached for a week."""
+    def file_response(self, full_path, *a, **k):
+        resp = super().file_response(full_path, *a, **k)
+        resp.headers["Cache-Control"] = "public, max-age=604800" if "vendor" in Path(full_path).parts else "no-cache"
+        return resp
+
+
+def static_version() -> str:
+    """Changes whenever one of our scripts does; added to their URLs so a browser holding an older copy fetches the new one."""
+    return hashlib.sha1(b"".join(str(p.stat().st_mtime_ns).encode() for p in sorted(STATIC_DIR.glob("*.mjs")))).hexdigest()[:10]
+
+
+async def reader_script(request: Request) -> Response:
+    """reader.mjs with its own import of ink-core.mjs versioned too (the page URL carries ?v=, the nested import cannot)."""
+    src = (STATIC_DIR / "reader.mjs").read_text(encoding="utf-8").replace('"/app/static/ink-core.mjs"', f'"/app/static/ink-core.mjs?v={static_version()}"')
+    return Response(src, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
 mimetypes.add_type("text/javascript", ".mjs")   # ES modules must be served as JavaScript
 mimetypes.add_type("application/wasm", ".wasm")
 
@@ -1043,7 +1065,7 @@ def paper_read_get(request: Request) -> Response:
     page = Path(__file__).with_name("reader.html").read_text(encoding="utf-8")
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     for k, v in (("__THEME__", THEME_VARS), ("__NAV__", global_nav(request)), ("__TITLE__", escape(info["title"])),
-                 ("__STEM__", quote(stem)), ("__CHAT__", chat_html), ("__DATA__", blob)):
+                 ("__STEM__", quote(stem)), ("__CHAT__", chat_html), ("__DATA__", blob), ("__V__", static_version())):
         page = page.replace(k, v)
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
@@ -1431,7 +1453,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/paper/{stem}/pdf", guard(paper_pdf), methods=["GET"]),
         Route("/app/paper/{stem}/annotations", guard(annotations_get), methods=["GET"]),
         Route("/app/paper/{stem}/annotations", guard(annotations_post), methods=["POST"]),
-        Mount("/app/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static"),
+        Route("/app/static/reader.mjs", reader_script, methods=["GET"]),
+        Mount("/app/static", Static(directory=STATIC_DIR), name="static"),
         Route("/app/chat/messages", guard(chat_messages), methods=["GET"]),
         Route("/app/chat/send", guard(chat_send), methods=["POST"]),
         Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
