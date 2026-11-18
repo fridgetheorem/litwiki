@@ -157,6 +157,11 @@ and fixes the concept pages' paper lists. The kept page's body is not rewritten.
 attached to it automatically (no new summary, no LLM cost). Zotero itself is never modified (the API key is read-only), so the
 duplicates stay in Zotero; delete them there if you like, and the merged page is unaffected.
 
+## Models and cost
+Each kind of call has its own model setting in `config.yaml` under `llm:` (`summary_model`, `backfill_model`, `manual_model`, `ask_model`, `triage_model`, `chat_model`, `profile_model`,
+`bootstrap_model`), falling back as listed in `config.example.yaml`. Out of the box: Haiku for summaries (every quote is still verified against the PDF), triage, chat and project
+screening; Sonnet for papers you add by hand, library questions (Ask), profile rebuilds and the one-off bootstrap. `litwiki status` shows spend; the ledger is `spend` in `state.db`.
+
 ## Interest profile (learning from what you accept and refuse)
 `/app/profile` (Overview menu) shows what litwiki has learned from the daily-digest papers you accepted (ticked, swiped right, added by hand) and refused. A model reads the
 recent decisions together with exact accept rates per search concept and venue and writes **likes**, **dislikes** and **search phrases**; every statement must cite enough real

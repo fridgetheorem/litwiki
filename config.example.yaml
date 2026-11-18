@@ -40,7 +40,12 @@ schedule:                    # used by `litwiki cron`; times are in the host's t
 # ───────────── 3. LLM and budget ─────────────
 
 llm:
-  summary_model: sonnet      # paper summaries + claim extraction
+  # Model per kind of call; each is optional and falls back (backfill, manual, bootstrap -> summary; profile -> ask; chat, screen -> triage).
+  # On a 4-paper test Haiku's summaries verified every quote (47/47) like Sonnet's at about a ninth of the cost; it tags a few fewer concepts.
+  summary_model: haiku       # paper summaries + claim extraction (Zotero sync, approved digest items)
+  # backfill_model: haiku    # bulk Zotero backlog (defaults to summary_model)
+  manual_model: sonnet       # papers you add or attach by hand: few, and you chose them
+  bootstrap_model: sonnet    # one-off concept bootstrap
   ask_model: sonnet          # `litwiki ask`, web Ask page, Discord /ask
   triage_model: haiku        # discovery relevance scoring
   profile_model: sonnet      # interest-profile rebuilds (defaults to ask_model)
