@@ -96,7 +96,7 @@ def _with_notes(markdown: str, here: str, config, meta: dict | None = None) -> s
     label = "Edit notes" if note else "Add notes"
     attach = f" [Attach PDF](/app/attach/{stem}){{ .md-button }}" if (meta or {}).get("needs_pdf") else ""
     if str((meta or {}).get("pdf") or "").lower().endswith(".pdf"):
-        attach += f" [Read and annotate](/app/paper/{stem}/read){{ .md-button }} [Chat about this paper](/app/paper/{stem}/chat){{ .md-button }}"
+        attach += f" [Chat about this paper](/app/paper/{stem}/chat){{ .md-button }}"
     return (markdown.rstrip() + "\n\n## Notes (web)\n\n" + (note + "\n\n" if note else "")
             + f"[{label}](/app/notes/{stem}){{ .md-button }}{attach}\n")
 
@@ -125,6 +125,9 @@ def _with_bib(markdown: str, here: str) -> str:
     return markdown[:i] + "\n\n" + block + "\n" + markdown[i:] if i >= 0 else markdown + "\n\n" + block + "\n"
 
 
+_TOP_PDF_LINK = re.compile(r"\[\[_pdfs/[^\]|#]+\.pdf\|PDF\]\]")   # exactly the header link written at ingest
+
+
 def on_page_markdown(markdown: str, page, config, files):
     here = page.file.src_uri
     if here.startswith("reviews/") and posixpath.basename(here) != "index.md":
@@ -138,6 +141,10 @@ def on_page_markdown(markdown: str, page, config, files):
                     + f"[{'Edit notes' if note else 'Add notes'}](/app/project/{slug}/notes){{ .md-button }} "
                     + f"[Open project](/app/project/{slug}){{ .md-button }} [Chat about its papers](/app/project/{slug}/chat){{ .md-button }}\n")
     if here.startswith("papers/"):
+        if str((page.meta or {}).get("pdf") or "").lower().endswith(".pdf"):
+            # the PDF link at the top of the page opens the reader (the raw file stays available from the reader's download menu)
+            stem = posixpath.basename(here).removesuffix(".md")
+            markdown = _TOP_PDF_LINK.sub(f"[PDF](/app/paper/{quote(stem)}/read)", markdown, count=1)
         markdown = _with_bib(markdown, here)
         markdown = _with_citations(markdown, here)
         markdown = _with_notes(markdown, here, config, page.meta)
