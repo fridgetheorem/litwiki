@@ -844,11 +844,11 @@ async def project_act(request: Request) -> Response:
             request_build()
         return JSONResponse({"message": f"{'Linked' if action == 'link' else 'Unlinked'} {n} paper(s)."})
     cids = [i for i in ids if not i.startswith("page:")]
-    if action == "ingest":
-        n = await run_in_threadpool(tick_items, CFG, cids)
-        if n:
-            spawn_queue()
-        return JSONResponse({"message": f"Ingesting {n} paper(s); they join the project when done."})
+    if action in ("ingest", "retry"):
+        if action == "ingest":
+            await run_in_threadpool(tick_items, CFG, cids)   # already-ticked items are fine: the queue picks them up
+        spawn_queue()
+        return JSONResponse({"message": f"Ingesting {len(cids)} paper(s); they join the project when done."})
     if action == "dismiss":
         con = db()
         con.executemany("UPDATE candidates SET status='rejected' WHERE id=? AND status='digested'", [(i,) for i in cids])

@@ -11,7 +11,7 @@ import requests
 
 from . import exclusions, profile, vault
 from .common import db, log, read_page, run_lock, slugify, write_atomic, write_page
-from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write
+from .ingest import NoContent, apply_tags, fetch_document, load_document, summarise_and_write, write_stub
 from .llm import BudgetExceeded, claude, pick_model
 from .notify import bot_active, notify
 
@@ -461,8 +461,13 @@ def ingest_candidate(cfg, cid: str, c: dict) -> str:
     if c.get("title_from_doc"):  # title is just a filename: let the summary supply the printed one
         meta["item_type"] = "attachment"
     source = f"{'manual' if c.get('manual') else 'discovery'}:{c['kind']}"
-    page = summarise_and_write(cfg, key=cid, meta=meta, pages=pages, unit=unit, pdf_rel=pdf_rel,
-                               source=source, purpose="summary:manual" if c.get("manual") else "summary:discovery")
+    try:
+        page = summarise_and_write(cfg, key=cid, meta=meta, pages=pages, unit=unit, pdf_rel=pdf_rel,
+                                   source=source, purpose="summary:manual" if c.get("manual") else "summary:discovery")
+    except NoContent as e:
+        if not str(e).startswith("needs_pdf"):
+            raise
+        page = write_stub(cfg, key=cid, meta=meta, source=source, pdf_rel=pdf_rel)
     pfm, pbody = read_page(v / page)
     changed = False
     if c.get("review"):
@@ -496,11 +501,13 @@ def ingest_approved(cfg) -> dict:
             except BudgetExceeded:
                 return {"done": done, "failed": failed}
             except NoContent as e:
-                con.execute("UPDATE candidates SET status='rejected' WHERE id=?", (cid,))
+                c["error"] = str(e)
+                con.execute("UPDATE candidates SET status='rejected', data=? WHERE id=?", (json.dumps(c), cid))
                 log.warning("approved %s has no content: %s", cid, e)
-            except Exception:
+            except Exception as e:
                 log.exception("approved ingest failed for %s", cid)
-                con.execute("UPDATE candidates SET status='failed' WHERE id=?", (cid,))
+                c["error"] = str(e)[:300]
+                con.execute("UPDATE candidates SET status='failed', data=? WHERE id=?", (json.dumps(c), cid))
                 failed += 1
             con.commit()
     return {"done": done, "failed": failed}
