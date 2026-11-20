@@ -31,6 +31,10 @@ main{flex:1;min-height:0;display:flex;gap:1rem;padding:1rem}
 .p{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:.4rem .6rem;font-size:.88rem;cursor:pointer;line-height:1.3}
 .p:hover{border-color:var(--ink)}.p b{font-weight:600;display:block}.p span{color:var(--mut);font-size:.8rem}
 #hint{font-size:.8rem;color:var(--mut)}
+#thumbs{display:none;gap:.5rem;flex-wrap:wrap;align-items:flex-end}#thumbs.on{display:flex}
+#thumbs a{display:block;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper)}
+#thumbs img{display:block;height:4.2rem;width:auto;max-width:9rem;object-fit:cover}
+#t.drop{outline:2px dashed var(--ink);outline-offset:0}
 .none{color:var(--mut);font-style:italic;font-size:.9rem}
 @media(max-width:860px){main{flex-direction:column}#right{width:auto;height:30%}}
 </style></head><body>
@@ -43,7 +47,8 @@ __TABS__
 <main>
 <div id="left"><div id="cap"><input id="q" type="text" placeholder="Quick add: type a thought and press Enter" autocomplete="off"></div>
 <textarea id="t" spellcheck="true" aria-label="Project notes"></textarea>
-<div id="hint">Markdown. Autosaves a few seconds after you stop typing; <b>Save &amp; publish</b> also updates the wiki page. <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd> saves. Notes live in <code>notes/projects/</code> so Obsidian can edit them too.</div></div>
+<div id="thumbs" aria-label="Images in these notes"></div>
+<div id="hint">Markdown. Autosaves a few seconds after you stop typing; <b>Save &amp; publish</b> also updates the wiki page. <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd> saves. Paste or drop an image to add it (it is stored as a file and linked, not embedded). Notes live in <code>notes/projects/</code> so Obsidian can edit them too.</div></div>
 <aside id="right"><h2>Linked papers: click to insert a link</h2><input id="pf" type="search" placeholder="Filter linked papers"><div id="plist"></div></aside>
 </main></div>
 <script type="application/json" id="data">__DATA__</script>
@@ -83,6 +88,29 @@ $("q").addEventListener("keydown",e=>{
   if(e.key!=="Enter"||!$("q").value.trim())return;e.preventDefault();
   const d=new Date().toISOString().slice(0,10),line="- "+d+" "+$("q").value.trim();
   t.value=t.value.replace(/\s*$/,"")+"\n"+line+"\n";$("q").value="";t.scrollTop=t.scrollHeight;schedule();setTimeout(()=>save(false),300)});
+// images: paste or drop uploads the file and inserts a Markdown link to it (the image itself is never put in the note text)
+const IMG=/!\[[^\]]*\]\(\.\.\/\.\.\/_attachments\/[^\/)]+\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))\)/g;
+function thumbs(){
+  const box=$("thumbs"),names=[...new Set([...t.value.matchAll(IMG)].map(m=>m[1]))];box.replaceChildren();box.classList.toggle("on",names.length>0);
+  names.forEach(n=>{const a=document.createElement("a"),i=document.createElement("img");a.href=i.src=BASE+"/images/"+n;a.target="_blank";a.rel="noreferrer";i.alt="";i.loading="lazy";a.append(i);box.append(a)})}
+let ups=0;
+async function upload(file){
+  const ph="![uploading "+(++ups)+"…]()";insert("\n"+ph+"\n");setState("Uploading image…");
+  const gone=msg=>{t.value=t.value.replace("\n"+ph+"\n","\n").replace(ph,"");setState(msg,"dirty");thumbs()};
+  try{
+    const fd=new FormData();fd.append("_csrf",CSRF);fd.append("image",file,file.name||"pasted.png");
+    const r=await fetch(BASE+"/images",{method:"POST",body:fd,credentials:"same-origin"});
+    if(r.redirected&&r.url.includes("/app/login"))return gone("Session expired: log in again, then paste the image again.");
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)return gone(j.error||"Could not add the image ("+r.status+")");
+    t.value=t.value.replace(ph,j.markdown);t.dispatchEvent(new Event("input"));thumbs();
+  }catch(e){gone("Could not add the image: "+e.message)}}
+const imgs=list=>[...(list||[])].filter(f=>f.type&&f.type.startsWith("image/"));
+t.addEventListener("paste",e=>{const cd=e.clipboardData,fs=imgs(cd&&cd.files);if(!fs.length||(cd.getData("text/plain")||"").trim())return;e.preventDefault();fs.forEach(upload)   // real text on the clipboard pastes as text});
+t.addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();t.classList.add("drop")}});
+t.addEventListener("dragleave",()=>t.classList.remove("drop"));
+t.addEventListener("drop",e=>{t.classList.remove("drop");const fs=imgs(e.dataTransfer&&e.dataTransfer.files);if(!fs.length)return;e.preventDefault();fs.forEach(upload)});
+t.addEventListener("input",thumbs);thumbs();
 // link picker
 function insert(text){const a=t.selectionStart,b=t.selectionEnd;t.setRangeText(text,a,b,"end");t.focus();t.dispatchEvent(new Event("input"))}
 function list(){
