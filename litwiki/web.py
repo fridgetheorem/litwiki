@@ -143,8 +143,7 @@ nav.gnav .n{color:var(--acc);font-weight:600}</style>
 <details><summary>Ingestion{% if inbox_n %} <span class="n">({{ inbox_n }})</span>{% endif %}</summary><div class="menu"><a href="/app/">Ingestion page</a>
 <a href="/app/inbox">Inbox{% if inbox_n %}<span class="n">{{ inbox_n }}</span>{% endif %}</a><a href="/app/swipe">Swipe</a></div></details>
 <details><summary>Overview</summary><div class="menu"><a href="/app/concepts">Concepts</a><a href="/app/papers">Papers</a><a href="/app/profile">Interest profile</a></div></details>
-<details><summary>Projects</summary><div class="menu"><a href="/app/projects">All projects</a>{% for s, t in nav_projects %}<a href="/app/project/{{ s }}/papers" title="Papers in {{ t }}">{{ t }}<span class="n">Papers</span></a>{% endfor %}</div></details>
-<details><summary>Tools</summary><div class="menu"><a href="/app/ask">Ask</a><a href="/clusters/">Map</a></div></details>
+<details><summary>Tools</summary><div class="menu"><a href="/app/projects">Projects</a><a href="/app/ask">Ask</a><a href="/clusters/">Map</a></div></details>
 <a href="/app/settings">Settings</a><span class="sp"></span>
 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Log out</button></form></nav>
 <script>(function(){if(window.__lwNav)return;window.__lwNav=1;
@@ -531,20 +530,10 @@ def _inbox_count() -> int:
     return sum(not i["ticked"] for _, g in _inbox_groups() for i in g)
 
 
-def _nav_projects() -> list[tuple[str, str]]:
-    """Active projects for the Projects menu: (slug, title), so each links straight to its Papers page."""
-    try:
-        rvs = vault.reviews(CFG["vault"])
-    except Exception:
-        return []
-    return sorted(((s, str(fm.get("title") or s)) for s, fm in rvs.items() if str(fm.get("status", "active")) != "archived"),
-                  key=lambda r: r[1].lower())
-
-
 def global_nav(request: Request) -> str:
     """The site menu as HTML, for the standalone pages that are not rendered through base.html."""
     sess = get_session(request)
-    return ENV.get_template("nav.html").render(csrf=(sess or {}).get("csrf", ""), inbox_n=_inbox_count(), nav_projects=_nav_projects()) if sess else ""
+    return ENV.get_template("nav.html").render(csrf=(sess or {}).get("csrf", ""), inbox_n=_inbox_count()) if sess else ""
 
 
 def render(request: Request, name: str, status: int = 200, **ctx) -> Response:
@@ -557,7 +546,7 @@ def render(request: Request, name: str, status: int = 200, **ctx) -> Response:
             pass
     inbox_n = _inbox_count() if sess else 0
     html = ENV.get_template(name).render(authed=bool(sess), csrf=(sess or {}).get("csrf", ""), flash=flash,
-                                         inbox_n=inbox_n, nav_projects=_nav_projects() if sess else [], **ctx)
+                                         inbox_n=inbox_n, **ctx)
     resp = HTMLResponse(html, status_code=status)
     if flash:
         resp.delete_cookie("lw_flash", path="/app")
