@@ -484,33 +484,58 @@ def ingest_candidate(cfg, cid: str, c: dict) -> str:
 
 
 def ingest_approved(cfg) -> dict:
+    """Ingest what was approved: digest lines ticked `[x]` (Obsidian or the web) and candidates the web marked
+    'approved' (which works even when the candidate has no line in a digest file)."""
     con = db()
     v = cfg["vault"]
     done = failed = 0
+    work = []
     for p in sorted((v / vault.DIGESTS).glob("*.md")):
         for cid in TICKED.findall(p.read_text(encoding="utf-8")):
-            row = con.execute("SELECT * FROM candidates WHERE id=?", (cid,)).fetchone()
-            if not row or row["status"] not in ("digested", "triaged", "failed"):
-                continue
-            c = json.loads(row["data"])
-            try:
-                page = ingest_candidate(cfg, cid, c)
-                con.execute("UPDATE candidates SET status='ingested' WHERE id=?", (cid,))
+            work.append((cid, p))
+    work += [(r["id"], v / r["digest"] if re.fullmatch(r"digests/[\w.\-]+\.md", r["digest"] or "") else None)
+             for r in con.execute("SELECT id, digest FROM candidates WHERE status='approved' AND digest!='web'")]
+    seen = set()
+    for cid, p in work:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        row = con.execute("SELECT * FROM candidates WHERE id=?", (cid,)).fetchone()
+        if not row or row["status"] not in ("digested", "triaged", "failed", "approved"):
+            continue
+        c = json.loads(row["data"])
+        try:
+            page = ingest_candidate(cfg, cid, c)
+            con.execute("UPDATE candidates SET status='ingested' WHERE id=?", (cid,))
+            if p is not None and p.is_file():
                 _mark_in_digest(p, cid, page)
-                done += 1
-            except BudgetExceeded:
-                return {"done": done, "failed": failed}
-            except NoContent as e:
-                c["error"] = str(e)
-                con.execute("UPDATE candidates SET status='rejected', data=? WHERE id=?", (json.dumps(c), cid))
-                log.warning("approved %s has no content: %s", cid, e)
-            except Exception as e:
-                log.exception("approved ingest failed for %s", cid)
-                c["error"] = str(e)[:300]
-                con.execute("UPDATE candidates SET status='failed', data=? WHERE id=?", (json.dumps(c), cid))
-                failed += 1
+            done += 1
+        except BudgetExceeded:
             con.commit()
+            return {"done": done, "failed": failed}
+        except NoContent as e:
+            c["error"] = str(e)
+            con.execute("UPDATE candidates SET status='rejected', data=? WHERE id=?", (json.dumps(c), cid))
+            log.warning("approved %s has no content: %s", cid, e)
+        except Exception as e:
+            log.exception("approved ingest failed for %s", cid)
+            c["error"] = str(e)[:300]
+            con.execute("UPDATE candidates SET status='failed', data=? WHERE id=?", (json.dumps(c), cid))
+            failed += 1
+        con.commit()
     return {"done": done, "failed": failed}
+
+
+def approve(cfg, cids: list[str]) -> int:
+    """Approve candidates for ingestion from the web: tick their digest line when there is one, and mark them
+    'approved' so the queue picks them up either way. Returns how many were accepted."""
+    tick_items(cfg, cids)
+    con, n = db(), 0
+    for cid in cids:
+        n += con.execute("UPDATE candidates SET status='approved' WHERE id=? AND status IN ('digested','triaged','failed') "
+                         "AND digest!='web'", (cid,)).rowcount
+    con.commit()
+    return n
 
 
 def tick_items(cfg, cids: list[str]) -> int:
