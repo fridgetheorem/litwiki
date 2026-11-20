@@ -1,7 +1,6 @@
 {
 	admin off
 	auto_https off
-	persist_config off
 }
 
 # Paths and ports come from config.yaml via `litwiki config-env` (bin/watchdog.sh exports them).
