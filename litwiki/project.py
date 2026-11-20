@@ -89,11 +89,11 @@ def pool(cfg, slug: str, con=None) -> list[dict]:
     ticked = set()
     for p in (v / vault.DIGESTS).glob("*.md"):
         ticked.update(TICKED.findall(p.read_text(encoding="utf-8")))
-    for r in con.execute("SELECT id, data, digest, status FROM candidates WHERE status IN ('digested','failed') AND digest!='web'"):
+    for r in con.execute("SELECT id, data, digest, status FROM candidates WHERE status IN ('digested','failed','approved') AND digest!='web'"):
         c = json.loads(r["data"])
         if c.get("review") != slug:
             continue
-        kind = "failed" if r["status"] == "failed" else "queued" if r["id"] in ticked else "new"
+        kind = "failed" if r["status"] == "failed" else "queued" if r["status"] == "approved" or r["id"] in ticked else "new"
         authors = [str(a) for a in c.get("authors", [])]
         out.append({
             "id": r["id"], "kind": kind, "title": c.get("title", ""),

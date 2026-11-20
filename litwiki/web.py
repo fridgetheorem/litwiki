@@ -53,7 +53,7 @@ mimetypes.add_type("application/wasm", ".wasm")
 
 from . import annotations, ask as askmod, chat, concept, exclusions, manual, notes, profile, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
-from .discover import tick_items
+from .discover import approve, tick_items
 from .llm import spent
 
 SESSION_DAYS = 30
@@ -845,10 +845,10 @@ async def project_act(request: Request) -> Response:
         return JSONResponse({"message": f"{'Linked' if action == 'link' else 'Unlinked'} {n} paper(s)."})
     cids = [i for i in ids if not i.startswith("page:")]
     if action in ("ingest", "retry"):
-        if action == "ingest":
-            await run_in_threadpool(tick_items, CFG, cids)   # already-ticked items are fine: the queue picks them up
-        spawn_queue()
-        return JSONResponse({"message": f"Ingesting {len(cids)} paper(s); they join the project when done."})
+        n = await run_in_threadpool(approve, CFG, cids)
+        if n:
+            spawn_queue()
+        return JSONResponse({"message": f"Ingesting {n} paper(s); they join the project when done." if n else "Nothing to ingest: those papers are no longer waiting."})
     if action == "dismiss":
         con = db()
         con.executemany("UPDATE candidates SET status='rejected' WHERE id=? AND status='digested'", [(i,) for i in cids])
