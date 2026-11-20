@@ -82,13 +82,14 @@ export class History {
     const op = this.undoStack.pop();
     if (!op) return null;
     this.redoStack.push(op);
+    if (op.type === "edit") return { type: "edit", from: op.to, to: op.from };      // an edit swaps one item for another
     return { type: op.type === "add" ? "del" : "add", items: op.items };
   }
   redo() {
     const op = this.redoStack.pop();
     if (!op) return null;
     this.undoStack.push(op);
-    return { type: op.type, items: op.items };
+    return op.type === "edit" ? { type: "edit", from: op.from, to: op.to } : { type: op.type, items: op.items };
   }
   get canUndo() { return this.undoStack.length > 0; }
   get canRedo() { return this.redoStack.length > 0; }

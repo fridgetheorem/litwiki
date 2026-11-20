@@ -44,6 +44,19 @@ body.chromeoff .ic.up,body:not(.chromeoff) .ic.down{display:none}
 .inkLayer{position:absolute;inset:0;pointer-events:none;z-index:6}.inkLayer svg{width:100%;height:100%;display:block;overflow:hidden}
 .drawing .inkLayer{pointer-events:auto;touch-action:none;cursor:crosshair}
 .ink-hidden .inkLayer{display:none}
+.tbLayer{position:absolute;inset:0;container-type:inline-size;pointer-events:none}
+.tbx{position:absolute;pointer-events:auto;font-family:Helvetica,Arial,"Liberation Sans",sans-serif;line-height:1.2;min-width:2em;border:1px dashed transparent;border-radius:3px;touch-action:manipulation}
+.tbx:hover,.tbx.editing{border-color:var(--acc);background:#ffffff55}
+.tbx .tt{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.2em;outline:none;cursor:text;user-select:none;-webkit-user-select:none;padding:0 .1em}
+.tbx.editing .tt{user-select:text;-webkit-user-select:text}
+.tbx .tc{display:none;position:absolute;top:-1.7rem;left:-1px;gap:.15rem;font:13px/1 system-ui,sans-serif;white-space:nowrap}
+.tbx:hover .tc,.tbx.editing .tc,.textmode .tbx .tc{display:flex}
+.tc button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:.2rem .45rem;font:inherit;cursor:pointer;touch-action:none}
+.tc .mv{cursor:grab}.tc button:hover{border-color:var(--acc);color:var(--acc)}
+.tbx .rs{display:none;position:absolute;top:0;right:-5px;bottom:0;width:10px;cursor:ew-resize;touch-action:none}
+.tbx .rs::after{content:"";position:absolute;right:3px;top:25%;bottom:25%;width:3px;border-radius:2px;background:var(--acc)}
+.tbx:hover .rs,.tbx.editing .rs,.textmode .tbx .rs{display:block}
+.textmode .inkLayer{cursor:text}
 @media(max-width:900px){#pane{position:absolute;top:.6rem;bottom:.6rem;right:.6rem;width:min(27rem,92%);max-width:none;z-index:20;padding-top:3.3rem;box-shadow:-6px 0 20px #0004}}
 </style></head><body>
 <div id="chrome">
@@ -65,12 +78,13 @@ __NAV__
 <div class="grp"><button class="tb on" data-tool="hand" type="button" title="Hand: scroll, zoom, select text" aria-label="Hand"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
 <button class="tb" data-tool="pen" type="button" title="Pen" aria-label="Pen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>
 <button class="tb" data-tool="highlighter" type="button" title="Highlighter" aria-label="Highlighter"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+<button class="tb" data-tool="text" type="button" title="Text box: click on the page, then type" aria-label="Text box"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></button>
 <button class="tb" data-tool="eraser" type="button" title="Eraser (a stylus's eraser end also works)" aria-label="Eraser"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button></div>
 <span class="sep"></span>
 <div class="grp" id="colors"><button class="sw" data-color="#d62828" type="button" aria-label="Red" title="Red"></button><button class="sw" data-color="#facc15" type="button" aria-label="Yellow" title="Yellow"></button>
 <button class="sw" data-color="#16a34a" type="button" aria-label="Green" title="Green"></button><button class="sw" data-color="#2563eb" type="button" aria-label="Blue" title="Blue"></button>
 <button class="sw" data-color="#111111" type="button" aria-label="Black" title="Black"></button><button class="sw" data-color="#a855f7" type="button" aria-label="Purple" title="Purple"></button></div>
-<input id="width" type="range" min="0.6" max="30" step="0.2" value="1.6" aria-label="Stroke width" title="Stroke width">
+<input id="width" type="range" min="0.6" max="30" step="0.2" value="1.6" aria-label="Stroke width" title="Stroke width (font size for text)">
 <span class="sep"></span>
 <div class="grp"><button class="tb" id="undo" type="button" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button><button class="tb" id="redo" type="button" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg></button></div>
 <span class="sep"></span>

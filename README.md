@@ -186,7 +186,11 @@ one row per stroke, in PDF coordinates like Zotero's ink annotations, so they ca
 Stylus handling is the browser's: litwiki only checks the pointer type and has no palm rejection of its own (the OS and browser do that). Stroke smoothing is
 [perfect-freehand](https://github.com/steveruizok/perfect-freehand). Both libraries are vendored under `litwiki/static/vendor/` (Apache-2.0 and MIT), so the reader works offline.
 
-**Download:** the download button in the reader gives the original PDF, or the PDF with your strokes added as standard ink annotations (made on the fly; the stored file is never modified).
+**Text boxes:** the **T** tool puts typable text on the page: click where it goes, type, and click elsewhere (or press Esc) to finish. Click a box to edit it, drag its ⋮⋮ grip to move it,
+drag its right edge to change the width, ✕ (or the eraser) deletes it. The font size is the width slider and the colour is the swatches. Boxes are saved like strokes
+(same table, `kind = text`, with the rectangle in PDF coordinates), each change is one undo step, and they follow **My notes** show/hide.
+
+**Download:** the download button in the reader gives the original PDF, or the PDF with your strokes added as standard ink annotations, and text boxes as FreeText annotations (Latin text only: the PDF's built-in Helvetica) (made on the fly; the stored file is never modified).
 
 ## Chat with quotes
 Ask questions about one paper (`/app/paper/<stem>/chat`, linked from the paper's wiki page and the web Papers list) or about all the papers linked to a project
