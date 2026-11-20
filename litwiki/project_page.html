@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project screening · litwiki</title>
+<title>Add papers · litwiki</title>
 <style>
 __THEME__
 :root{--lib:var(--acc)}
@@ -57,7 +57,6 @@ __TABS__
 <div id="bar"><span id="sc">Nothing selected</span><span class="sp"></span>
 <button class="b sec" id="clr" type="button" disabled>Clear</button>
 <button class="b sec" id="dis" type="button" disabled>Dismiss new</button>
-<button class="b sec" id="unl" type="button" disabled>Unlink</button>
 <button class="b" id="lnk" type="button" disabled>Link to project</button>
 <button class="b" id="ing" type="button" disabled>Ingest new</button></div>
 <div id="toast" role="status"></div>
@@ -80,7 +79,7 @@ async function post(path,params){
   return j}
 const count=k=>cards.filter(c=>c.kind===k).length;
 function segs(){const s=$("seg");s.replaceChildren();
-  for(const[k,l] of [["library","In library"],["new","New"],["linked","Linked"]]){const b=el("button",view===k?"on":"",l+" ("+count(k)+")");b.type="button";b.onclick=()=>{view=k;sessionStorageSet("view",k);sel.clear();render()};s.append(b)}}
+  for(const[k,l] of [["library","In library"],["new","New"]]){const b=el("button",view===k?"on":"",l+" ("+count(k)+")");b.type="button";b.onclick=()=>{view=k;sessionStorageSet("view",k);sel.clear();render()};s.append(b)}}
 function shown(){
   const w=q.toLowerCase().split(/\s+/).filter(Boolean);
   const r=cards.filter(c=>c.kind===view&&w.every(x=>(c.title+" "+c.abstract+" "+c.bullets.join(" ")).toLowerCase().includes(x)));
@@ -115,7 +114,7 @@ function bar(){
   $("sc").textContent=ids.length?ids.length+" selected":"Nothing selected";
   $("clr").disabled=!ids.length;$("lnk").disabled=!nl;$("lnk").textContent=nl?"Link "+nl+" to project":"Link to project";
   $("ing").disabled=!nn;$("ing").textContent=nn?"Ingest "+nn+" new":"Ingest new";$("dis").disabled=!nn;$("dis").textContent=nn?"Dismiss "+nn+" new":"Dismiss new";
-  $("unl").disabled=!nk;$("unl").textContent=nk?"Unlink "+nk:"Unlink"}
+}
 async function act(action,kind,label){
   const ids=[...sel].filter(i=>cards.find(c=>c.id===i)?.kind===kind);if(!ids.length)return;
   if(action==="ingest"&&!confirm("Ingest "+ids.length+" paper(s)? Each summary costs roughly $0.05-0.15."))return;
@@ -134,7 +133,7 @@ async function poll(){
     $("info").textContent="Analyzing… "+s.done+" / "+s.total;
     if(!s.running){polling=false;if(s.error)toast("Stopped: "+s.error);await reload();return}}}
 $("analyze").onclick=async()=>{try{await post(BASE+"/analyze",{});poll()}catch(e){toast(e.message)}};
-$("lnk").onclick=()=>act("link","library","Linked");$("unl").onclick=()=>act("unlink","linked","Unlinked");
+$("lnk").onclick=()=>act("link","library","Linked");
 $("ing").onclick=()=>act("ingest","new","Ingesting");$("dis").onclick=()=>act("dismiss","new","Dismissed");
 $("clr").onclick=()=>{sel.clear();render()};
 $("selall").onclick=()=>{shown().forEach(c=>sel.add(c.id));render()};

@@ -143,7 +143,7 @@ def _project_page(here: str, page, config) -> str:
         pass
     base = f"/app/project/{quote(slug)}"
     buttons = "".join(f'<a class="md-button{" md-button--primary" if i == 0 else ""}" {_BTN} href="{base}{path}">{label}</a>'
-                      for i, (label, path) in enumerate((("Setup", ""), ("Papers", "/papers"), ("Notes", "/notes"), ("Chat", "/chat"))))
+                      for i, (label, path) in enumerate((("Setup", ""), ("Papers", "/papers"), ("Add papers", "/add"), ("Notes", "/notes"), ("Chat", "/chat"))))
     archived = str((page.meta or {}).get("status", "active")) == "archived"
     head = f'<p style="text-align:center;margin:1.2rem 0 1.6rem">{buttons}</p>'
     if archived:
