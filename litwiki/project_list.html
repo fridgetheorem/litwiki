@@ -15,21 +15,25 @@ input[type=search]{flex:1;min-width:10rem;max-width:22rem}
 #tagbar{display:flex;gap:.4rem;flex-wrap:wrap;padding:.6rem 1rem 0}
 .chip{font:inherit;font-size:.82rem;border:1px solid var(--line);border-radius:999px;padding:.1rem .65rem;background:none;color:var(--mut);cursor:pointer}
 .chip.on{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
-#list{display:flex;flex-direction:column;gap:.6rem;padding:1rem}
-.p{display:flex;gap:.7rem;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem}
-.p.drag{opacity:.45}.p.over{border-color:var(--acc)}
-.mv{display:flex;flex-direction:column;align-items:center;gap:.1rem;color:var(--mut);user-select:none}
-.mv .h{cursor:grab;font-size:1.1rem;line-height:1}.mv button{border:0;background:none;color:var(--mut);cursor:pointer;padding:0 .3rem;font-size:.8rem;line-height:1.1}.mv button:hover{color:var(--acc)}
-.n{width:1.8rem;text-align:right;color:var(--mut);font-variant-numeric:tabular-nums;padding-top:.1rem}
-.bd{flex:1;min-width:0;display:flex;flex-direction:column;gap:.3rem}
+#list{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:.9rem;padding:1rem;align-items:stretch}
+.p{position:relative;display:flex;flex-direction:column;gap:.45rem;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;touch-action:manipulation}
+.p.lift{opacity:.35}
+.ph{display:flex;align-items:center;gap:.5rem}
+.h{cursor:grab;touch-action:none;user-select:none;color:var(--mut);font-size:1.15rem;line-height:1;padding:.25rem .4rem;margin:-.25rem 0 -.25rem -.4rem;border-radius:6px}.h:hover{color:var(--acc);background:var(--bg)}
+.n{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem}.ph .sp{flex:1}
+.ph button.mvb{border:1px solid var(--line);background:none;color:var(--mut);border-radius:6px;cursor:pointer;font-size:.8rem;padding:0 .4rem}.ph button.mvb:hover{color:var(--acc);border-color:var(--acc)}
+.bd{display:flex;flex-direction:column;gap:.35rem;flex:1}
 .bd h3{margin:0;font-size:1rem;line-height:1.3}.bd h3 a{color:var(--fg);text-decoration:none}.bd h3 a:hover{color:var(--acc)}
+#ins{position:absolute;width:4px;border-radius:2px;background:var(--acc);box-shadow:0 0 0 2px var(--bg);pointer-events:none;display:none;z-index:4}
+#ghost{position:fixed;z-index:20;pointer-events:none;opacity:.9;box-shadow:0 10px 30px #0005;transform:rotate(1.5deg);display:none}
+body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
 .by{font-size:.84rem;color:var(--mut)}
 .tg{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center}
 .tg .t{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:0 .2rem 0 .6rem;display:inline-flex;align-items:center;gap:.15rem}
 .tg .t button{border:0;background:none;color:var(--mut);cursor:pointer;padding:0 .3rem;font-size:.9rem}
 .tg .t button:hover{color:var(--bad)}
 input.tin{font-size:.82rem;padding:.1rem .5rem;width:9rem}
-.row{display:flex;gap:.9rem;font-size:.84rem;flex-wrap:wrap}.row a,.row button{color:var(--acc);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-decoration:none}
+.row{display:flex;gap:.9rem;margin-top:auto;font-size:.84rem;flex-wrap:wrap}.row a,.row button{color:var(--acc);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-decoration:none}
 .row button.un{color:var(--mut)}
 #empty{padding:3rem 1rem;text-align:center;color:var(--mut)}
 #toast{position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:.5rem 1rem;border-radius:8px;display:none;z-index:9;max-width:90vw}
@@ -39,13 +43,13 @@ __TABS__
 <div class="bar"><input id="q" type="search" placeholder="Filter this project's papers"><span id="info" class="by"></span><span class="sp"></span>
 <a class="b" href="__ADD__">+ Add papers</a></div>
 <div id="tagbar"></div>
-<div id="list"></div><div id="empty" style="display:none"></div></div>
+<div id="list"><div id="ins"></div></div><div id="ghost" class="p"></div><div id="empty" style="display:none"></div></div>
 <div id="toast" role="status"></div>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 (()=>{
 const D=JSON.parse(document.getElementById("data").textContent),CSRF="__CSRF__",BASE="/app/project/"+encodeURIComponent(D.slug);
-let papers=D.papers,q="",tag="",dragFrom=null;
+let papers=D.papers,q="",tag="";
 const $=id=>document.getElementById(id),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",4000)}
 async function post(path,params){
@@ -60,17 +64,47 @@ function matches(p){const w=q.toLowerCase().split(/\s+/).filter(Boolean),h=(p.ti
   return w.every(x=>h.includes(x))&&(!tag||p.tags.includes(tag))}
 async function saveOrder(){try{await post(BASE+"/order",{stem:papers.map(p=>p.stem)})}catch(e){toast(e.message)}}
 function move(i,j){if(j<0||j>=papers.length||i===j)return;const[x]=papers.splice(i,1);papers.splice(j,0,x);render();saveOrder()}
+/* Drag with pointer events (mouse, touch, pen). The insertion bar shows the gap the card will drop into. */
+let drag=null;
+function gap(x,y){ // -> {idx, bar:{x,y,h}} the slot nearest the pointer, in terms of the cards shown
+  const L=$("list"),lr=L.getBoundingClientRect(),cs=[...L.querySelectorAll(".p")];if(!cs.length)return null;
+  let best=null,bd=1e9;
+  cs.forEach((c,k)=>{const r=c.getBoundingClientRect(),dx=Math.max(r.left-x,0,x-r.right),dy=Math.max(r.top-y,0,y-r.bottom),d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best={c,k,r,after:x>r.left+r.width/2}}});
+  const idx=best.k+(best.after?1:0),px=(best.after?best.r.right+6:best.r.left-6)-lr.left;
+  return{idx,bar:{x:px-2,y:best.r.top-lr.top,h:best.r.height}}}
+function startDrag(e,i,card){
+  if(e.button!==undefined&&e.button!==0)return;e.preventDefault();
+  const r=card.getBoundingClientRect(),g=$("ghost");
+  g.style.cssText="display:block;width:"+r.width+"px;left:"+r.left+"px;top:"+r.top+"px";g.replaceChildren(...card.cloneNode(true).childNodes);
+  drag={i,dx:e.clientX-r.left,dy:e.clientY-r.top,card,id:e.pointerId,idx:i};card.classList.add("lift");document.body.classList.add("dragging");
+  try{e.target.setPointerCapture(e.pointerId)}catch(_){}
+  addEventListener("pointermove",onMove);addEventListener("pointerup",endDrag);addEventListener("pointercancel",cancelDrag);addEventListener("keydown",onKey);
+  onMove(e)}
+function onMove(e){
+  if(!drag)return;const g=$("ghost");g.style.left=(e.clientX-drag.dx)+"px";g.style.top=(e.clientY-drag.dy)+"px";
+  const h=innerHeight,m=70;if(e.clientY<m)scrollBy(0,-14);else if(e.clientY>h-m)scrollBy(0,14);
+  const s=gap(e.clientX,e.clientY),ins=$("ins");if(!s){ins.style.display="none";return}
+  drag.idx=s.idx;ins.style.cssText="display:block;left:"+s.bar.x+"px;top:"+s.bar.y+"px;height:"+s.bar.h+"px"}
+function stopDrag(){removeEventListener("pointermove",onMove);removeEventListener("pointerup",endDrag);removeEventListener("pointercancel",cancelDrag);removeEventListener("keydown",onKey);
+  document.body.classList.remove("dragging");$("ghost").style.display="none";$("ins").style.display="none";drag&&drag.card.classList.remove("lift")}
+function endDrag(){const d=drag;stopDrag();drag=null;if(!d)return;
+  let j=d.idx;if(j>d.i)j--;                       // slot index counts the lifted card, so shift when moving later
+  if(j!==d.i)move(d.i,j)}
+function cancelDrag(){stopDrag();drag=null}
+function onKey(e){if(e.key==="Escape")cancelDrag()}
 async function setTags(p,tags){try{const r=await post(BASE+"/tags",{stem:p.stem,tags});p.tags=r.tags;render()}catch(e){toast(e.message)}}
 async function unlink(p){
   if(!confirm("Remove “"+p.title+"” from this project? The paper stays in your library."))return;
   try{await post(BASE+"/act",{action:"unlink",id:"page:"+p.stem});papers=papers.filter(x=>x!==p);render();toast("Removed from project.")}catch(e){toast(e.message)}}
 function row(p){
-  const i=papers.indexOf(p),d=el("div","p");d.draggable=!filtering();
-  const mv=el("div","mv");
-  if(!filtering()){const h=el("span","h","⋮⋮");h.title="Drag to reorder";mv.append(h);
-    const u=el("button","","▲");u.type="button";u.title="Move up";u.onclick=()=>move(i,i-1);
-    const dn=el("button","","▼");dn.type="button";dn.title="Move down";dn.onclick=()=>move(i,i+1);mv.append(u,dn)}
-  d.append(mv,el("div","n",""+(i+1)));
+  const i=papers.indexOf(p),d=el("div","p");
+  const ph=el("div","ph");
+  if(!filtering()){const h=el("span","h","⋮⋮");h.title="Drag to reorder";h.onpointerdown=e=>startDrag(e,i,d);ph.append(h)}
+  ph.append(el("span","n","#"+(i+1)),el("span","sp"));
+  if(!filtering()){const l=el("button","mvb","◀");l.type="button";l.title="Move earlier";l.onclick=()=>move(i,i-1);
+    const r=el("button","mvb","▶");r.type="button";r.title="Move later";r.onclick=()=>move(i,i+1);ph.append(l,r)}
+  d.append(ph);
   const b=el("div","bd"),h3=el("h3"),a=el("a","",p.title);a.href="/papers/"+encodeURIComponent(p.stem)+"/";h3.append(a);b.append(h3);
   const by=[p.authors,[p.venue,p.year].filter(Boolean).join(" ")].filter(Boolean).join(" · ");if(by)b.append(el("div","by",by));
   const tg=el("div","tg");
@@ -84,10 +118,6 @@ function row(p){
   const n=el("a","","Notes");n.href=BASE+"/notes";r.append(n);
   const un=el("button","un","Remove from project");un.type="button";un.onclick=()=>unlink(p);r.append(un);
   b.append(r);d.append(b);
-  d.ondragstart=e=>{dragFrom=i;d.classList.add("drag");e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",""+i)}catch(_){}};
-  d.ondragend=()=>{d.classList.remove("drag");document.querySelectorAll(".over").forEach(x=>x.classList.remove("over"))};
-  d.ondragover=e=>{if(dragFrom!==null){e.preventDefault();d.classList.add("over")}};d.ondragleave=()=>d.classList.remove("over");
-  d.ondrop=e=>{e.preventDefault();const f=dragFrom;dragFrom=null;if(f!==null)move(f,i)};
   return d}
 function render(){
   const all=[...new Set(papers.flatMap(p=>p.tags))].sort(),tb=$("tagbar");tb.replaceChildren();
@@ -97,7 +127,7 @@ function render(){
   let dl=$("alltags");if(!dl){dl=document.createElement("datalist");dl.id="alltags";document.body.append(dl)}
   dl.replaceChildren(...all.map(t=>{const o=document.createElement("option");o.value=t;return o}));
   const sh=papers.filter(matches),L=$("list"),active=document.activeElement&&document.activeElement.classList.contains("tin");
-  L.replaceChildren(...sh.map(row));
+  L.replaceChildren($("ins"),...sh.map(row));
   $("info").textContent=sh.length===papers.length?papers.length+" paper"+(papers.length===1?"":"s"):sh.length+" of "+papers.length+" shown (clear the filter to reorder)";
   const e=$("empty");e.style.display=sh.length?"none":"block";
   e.replaceChildren();
