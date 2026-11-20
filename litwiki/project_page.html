@@ -27,6 +27,7 @@ button.b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}button
 .c.sel .tick{background:var(--acc);border-color:var(--acc)}.c.sel .tick::after{content:"✓"}
 .meta{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;font-size:.76rem}
 .tag{border-radius:999px;padding:.05rem .55rem;border:1px solid;font-weight:600}
+.tag.queued{color:var(--new)}.tag.failed{color:var(--bad)}.err{font-size:.85rem;color:var(--bad)}
 .tag.new{color:var(--new)}.tag.library{color:var(--lib)}.tag.linked{color:var(--lnk)}
 .fit{margin-left:auto;font-weight:800;font-size:.95rem;border-radius:8px;padding:.05rem .5rem;background:var(--bg);border:1px solid var(--line)}
 .c h3{margin:.1rem 0 0;font-size:1rem;line-height:1.3}
@@ -58,6 +59,7 @@ __TABS__
 <button class="b sec" id="clr" type="button" disabled>Clear</button>
 <button class="b sec" id="dis" type="button" disabled>Dismiss new</button>
 <button class="b" id="lnk" type="button" disabled>Link to project</button>
+<button class="b sec" id="rty" type="button" disabled>Retry</button>
 <button class="b" id="ing" type="button" disabled>Ingest new</button></div>
 <div id="toast" role="status"></div>
 <script type="application/json" id="data">__DATA__</script>
@@ -79,7 +81,7 @@ async function post(path,params){
   return j}
 const count=k=>cards.filter(c=>c.kind===k).length;
 function segs(){const s=$("seg");s.replaceChildren();
-  for(const[k,l] of [["library","In library"],["new","New"]]){const b=el("button",view===k?"on":"",l+" ("+count(k)+")");b.type="button";b.onclick=()=>{view=k;sessionStorageSet("view",k);sel.clear();render()};s.append(b)}}
+  for(const[k,l] of [["library","In library"],["new","New"],["queued","Ingesting"],["failed","Failed"]]){if((k==="queued"||k==="failed")&&!count(k)&&view!==k)continue;const b=el("button",view===k?"on":"",l+" ("+count(k)+")");b.type="button";b.onclick=()=>{view=k;sessionStorageSet("view",k);sel.clear();render()};s.append(b)}}
 function shown(){
   const w=q.toLowerCase().split(/\s+/).filter(Boolean);
   const r=cards.filter(c=>c.kind===view&&w.every(x=>(c.title+" "+c.abstract+" "+c.bullets.join(" ")).toLowerCase().includes(x)));
@@ -87,13 +89,15 @@ function shown(){
   return r.sort(cmp)}
 function card(c){
   const d=el("div","c"+(sel.has(c.id)?" sel":""));d.append(el("span","tick"));
-  const m=el("div","meta");m.append(el("span","tag "+c.kind,c.kind==="new"?"New":c.kind==="linked"?"In project":"Library"));
+  const m=el("div","meta");m.append(el("span","tag "+c.kind,({new:"New",queued:"Ingesting…",failed:"Failed",linked:"In project"})[c.kind]||"Library"));
   if(c.kind==="new"&&c.triage!=="")m.append(el("span","",""+c.triage+"/10 search score"));
   if(c.fit!=null){const f=el("span","fit",c.fit+"/10");f.title="Fit to this project (Haiku)";f.style.color=c.fit>=7?"var(--lib)":c.fit>=4?"var(--new)":"var(--bad)";m.append(f)}
   d.append(m,el("h3","",c.title));
   const by=[c.authors,[c.venue,c.year].filter(Boolean).join(" ")].filter(Boolean).join(" · ");if(by)d.append(el("div","by",by));
   if(c.bullets.length){const u=el("ul","why");c.bullets.forEach(b=>u.append(el("li","",b)));d.append(u)}
-  else if(c.kind!=="linked"){const u=el("ul","why none");u.append(el("li","","Not analyzed yet. Use Analyze for a fit score and bullets."));d.append(u)}
+  else if(c.kind==="library"||c.kind==="new"){const u=el("ul","why none");u.append(el("li","","Not analyzed yet. Use Analyze for a fit score and bullets."));d.append(u)}
+  if(c.kind==="failed")d.append(el("div","err","Ingest failed"+(c.error?": "+c.error:".")+" Select it and use Retry."));
+  if(c.kind==="queued")d.append(el("div","by","Queued: it joins this project (see the Papers tab) when the summary is done, usually a minute or two."));
   if(c.abstract){d.append(el("div","abs",c.abstract))}
   const r=el("div","row");
   if(c.abstract.length>220){const b=el("button","","Show more");b.type="button";b.onclick=e=>{e.stopPropagation();const o=d.classList.toggle("open");b.textContent=o?"Show less":"Show more"};r.append(b)}
@@ -105,13 +109,14 @@ function card(c){
   return d}
 function render(){
   segs();const list=shown(),g=$("grid");g.replaceChildren(...list.map(card));$("empty").style.display=list.length?"none":"block";
-  const un=cards.filter(c=>c.kind!=="linked"&&c.fit==null).length,a=$("analyze");
+  const un=cards.filter(c=>(c.kind==="library"||c.kind==="new")&&c.fit==null).length,a=$("analyze");
   a.disabled=polling||!un;a.textContent=polling?"Analyzing…":un?"Analyze "+Math.min(un,D.limit)+" more":"All analyzed";
   $("info").textContent=list.length+" shown · "+un+" not analyzed yet"+(un?" (about $"+(Math.ceil(Math.min(un,D.limit)/12)*0.003).toFixed(2)+" for the next batch)":"");
   bar()}
 function bar(){
-  const ids=[...sel],k=id=>cards.find(c=>c.id===id)?.kind,nl=ids.filter(i=>k(i)==="library").length,nn=ids.filter(i=>k(i)==="new").length,nk=ids.filter(i=>k(i)==="linked").length;
+  const ids=[...sel],k=id=>cards.find(c=>c.id===id)?.kind,nl=ids.filter(i=>k(i)==="library").length,nn=ids.filter(i=>k(i)==="new").length,nf=ids.filter(i=>k(i)==="failed").length;
   $("sc").textContent=ids.length?ids.length+" selected":"Nothing selected";
+  $("rty").disabled=!nf;$("rty").textContent=nf?"Retry "+nf:"Retry";
   $("clr").disabled=!ids.length;$("lnk").disabled=!nl;$("lnk").textContent=nl?"Link "+nl+" to project":"Link to project";
   $("ing").disabled=!nn;$("ing").textContent=nn?"Ingest "+nn+" new":"Ingest new";$("dis").disabled=!nn;$("dis").textContent=nn?"Dismiss "+nn+" new":"Dismiss new";
 }
@@ -122,9 +127,17 @@ async function act(action,kind,label){
     const gone=new Set(ids);
     if(action==="link")cards.forEach(c=>{if(gone.has(c.id))c.kind="linked"});
     else if(action==="unlink")cards.forEach(c=>{if(gone.has(c.id))c.kind="library"});
+    else if(action==="ingest"||action==="retry"){cards.forEach(c=>{if(gone.has(c.id)){c.kind="queued";c.error=""}});view="queued";sessionStorageSet("view",view);watchQueue()}
     else cards=cards.filter(c=>!gone.has(c.id));
     ids.forEach(i=>sel.delete(i));toast(r.message||label);render()}
   catch(e){toast(e.message)}}
+let watching=false;
+async function watchQueue(){ // refresh while papers are being ingested; say what happened when the queue empties
+  if(watching)return;watching=true;const before=new Set(cards.filter(c=>c.kind==="queued").map(c=>c.id));
+  while(cards.some(c=>c.kind==="queued")){await new Promise(r=>setTimeout(r,5000));try{await reload()}catch(_){}}
+  watching=false;const done=cards.filter(c=>before.has(c.id)),bad=done.filter(c=>c.kind==="failed").length,ok=before.size-bad;
+  toast(ok+" paper"+(ok===1?"":"s")+" added to the project (see Papers)"+(bad?"; "+bad+" failed (see Failed)":""));
+  if(!cards.some(c=>c.kind===view))view=bad?"failed":"new";render()}
 async function reload(){const r=await fetch(BASE+"/cards",{credentials:"same-origin"});if(r.ok){cards=(await r.json()).cards;render()}}
 async function poll(){
   polling=true;render();
@@ -134,11 +147,12 @@ async function poll(){
     if(!s.running){polling=false;if(s.error)toast("Stopped: "+s.error);await reload();return}}}
 $("analyze").onclick=async()=>{try{await post(BASE+"/analyze",{});poll()}catch(e){toast(e.message)}};
 $("lnk").onclick=()=>act("link","library","Linked");
-$("ing").onclick=()=>act("ingest","new","Ingesting");$("dis").onclick=()=>act("dismiss","new","Dismissed");
+$("rty").onclick=()=>act("retry","failed","Retrying");$("ing").onclick=()=>act("ingest","new","Ingesting");$("dis").onclick=()=>act("dismiss","new","Dismissed");
 $("clr").onclick=()=>{sel.clear();render()};
 $("selall").onclick=()=>{shown().forEach(c=>sel.add(c.id));render()};
 $("q").oninput=e=>{q=e.target.value;render()};$("sort").onchange=e=>{sortBy=e.target.value;render()};
 if(!cards.some(c=>c.kind===view)){view=cards.some(c=>c.kind==="new")?"new":"library"}
 if(D.running)poll();else render();
+if(cards.some(c=>c.kind==="queued"))watchQueue();
 })();
 </script></body></html>

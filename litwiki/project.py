@@ -89,17 +89,18 @@ def pool(cfg, slug: str, con=None) -> list[dict]:
     ticked = set()
     for p in (v / vault.DIGESTS).glob("*.md"):
         ticked.update(TICKED.findall(p.read_text(encoding="utf-8")))
-    for r in con.execute("SELECT id, data, digest FROM candidates WHERE status='digested' AND digest!='web'"):
+    for r in con.execute("SELECT id, data, digest, status FROM candidates WHERE status IN ('digested','failed') AND digest!='web'"):
         c = json.loads(r["data"])
-        if c.get("review") != slug or r["id"] in ticked:
+        if c.get("review") != slug:
             continue
+        kind = "failed" if r["status"] == "failed" else "queued" if r["id"] in ticked else "new"
         authors = [str(a) for a in c.get("authors", [])]
         out.append({
-            "id": r["id"], "kind": "new", "title": c.get("title", ""),
+            "id": r["id"], "kind": kind, "title": c.get("title", ""),
             "authors": ", ".join(authors[:4]) + (" et al." if len(authors) > 4 else ""),
             "year": c.get("year") or (c.get("date") or "")[:4], "venue": c.get("venue", ""),
             "abstract": (c.get("abstract") or "")[:1200], "url": c.get("url", ""), "pdf_url": c.get("pdf_url", ""),
-            "triage": c.get("score", ""), "digest": digest_label(r["digest"]),
+            "triage": c.get("score", ""), "digest": digest_label(r["digest"]), "error": c.get("error") or "",
             "overlap": _overlap(rv, f"{c.get('title', '')} {c.get('abstract', '')}"),
         })
     return out
@@ -119,7 +120,7 @@ def cards(cfg, slug: str, con=None) -> list[dict]:
 
 def pending_analysis(cfg, slug: str, con=None) -> list[dict]:
     """Unlinked candidates without a cached result: new ones first, then library papers by keyword overlap."""
-    todo = [c for c in cards(cfg, slug, con) if c["kind"] != "linked" and c["fit"] is None]
+    todo = [c for c in cards(cfg, slug, con) if c["kind"] in ("library", "new") and c["fit"] is None]
     todo.sort(key=lambda c: (c["kind"] != "new", -c["overlap"]))
     return todo
 

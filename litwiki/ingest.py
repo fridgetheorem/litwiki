@@ -275,6 +275,20 @@ def summarise_and_write(cfg, *, key: str, meta: dict, pages, unit, pdf_rel, sour
     return page_rel
 
 
+def write_stub(cfg, *, key: str, meta: dict, source: str, pdf_rel=None) -> str:
+    """A metadata-only paper page for something with no readable text and no abstract (a paywalled DOI). No model call.
+    It is flagged needs_pdf, so 'Attach PDF' later turns it into a full page in place."""
+    v = cfg["vault"]
+    page_rel = vault.paper_filename(v, meta, key)
+    fm = frontmatter(meta, source, pdf_rel, [], key, {"ok": 0, "total": 0}, False)
+    fm["needs_pdf"] = True
+    body = (f"# {meta['title']}\n\n> Metadata only: no full text or abstract was available, so there is no summary yet. "
+            "Use **Attach PDF** on this page to add the paper and generate one.\n")
+    write_page(v / page_rel, fm, body)
+    log.info("wrote stub %s (no readable text)", page_rel)
+    return page_rel
+
+
 def refresh_metadata(cfg, con, row) -> None:
     """Zotero metadata changed for an ingested item: update frontmatter only."""
     d = json.loads(row["data"])
