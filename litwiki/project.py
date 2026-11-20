@@ -177,12 +177,8 @@ def start_analysis(cfg, slug: str, limit: int = 120) -> bool:
 def sync_page(cfg, slug: str) -> None:
     """Keep the auto-managed paper list on reviews/<slug>.md in step with the papers linked to it."""
     v, rv = cfg["vault"], get(cfg, slug)
-    rows = []
-    for p in sorted((v / vault.PAPERS).glob("*.md")):
-        fm, _ = read_page(p)
-        if slug in (fm.get("reviews") or []):
-            rows.append((str(fm.get("year") or "0000"), f"- [[papers/{p.stem}|{fm.get('title', p.stem)}]] ({fm.get('year') or 'n.d.'})"))
-    rows.sort(key=lambda r: r[0], reverse=True)
+    rows = [(0, f"- [[papers/{r['stem']}|{r['title']}]] ({r['year'] or 'n.d.'})" + (" — " + ", ".join(r["tags"]) if r["tags"] else ""))
+            for r in paper_list(cfg, slug)]
     fm, body = read_page(rv["path"])
     new = replace_block(body, "papers", "\n".join(r[1] for r in rows) or "_none yet_")
     if "## Linked papers" not in new:
@@ -253,6 +249,68 @@ def save_notes(cfg, slug: str, text: str, expected_mtime: int) -> int:
               updated=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     write_page(p, fm, text + "\n")
     return p.stat().st_mtime_ns
+
+
+TAG = re.compile(r"[^\w\-/ ]+")
+
+
+def clean_tag(t) -> str:
+    return " ".join(TAG.sub("", str(t)).split())[:40].lower()
+
+
+def paper_list(cfg, slug: str) -> list[dict]:
+    """The project's linked papers in the project's own order, with its own per-project tags. Papers never placed
+    by hand come after the ordered ones, newest first."""
+    rv = get(cfg, slug)
+    order = [str(s) for s in (rv.get("paper_order") or [])]
+    tags = rv.get("paper_tags") or {}
+    rows = {}
+    for p in (cfg["vault"] / vault.PAPERS).glob("*.md"):
+        fm, _ = read_page(p)
+        if slug in (fm.get("reviews") or []) and fm.get("title"):
+            au = [str(a) for a in (fm.get("authors") or []) if not str(a).strip().isdigit()]
+            rows[p.stem] = {"stem": p.stem, "title": str(fm["title"]), "year": fm.get("year") or "",
+                            "authors": ", ".join(au[:3]) + (" et al." if len(au) > 3 else ""),
+                            "venue": fm.get("venue") or "", "pdf": bool(fm.get("pdf")),
+                            "tags": [clean_tag(t) for t in (tags.get(p.stem) or []) if clean_tag(t)]}
+    first = [rows.pop(s) for s in order if s in rows]
+    rest = sorted(rows.values(), key=lambda r: (-(int(r["year"]) if str(r["year"]).isdigit() else 0), r["title"].lower()))
+    return first + rest
+
+
+def _save_meta(cfg, slug: str, edit) -> None:
+    rv = get(cfg, slug)
+    fm, body = read_page(rv["path"])
+    edit(fm)
+    for k in ("paper_order", "paper_tags"):
+        if not fm.get(k):
+            fm.pop(k, None)
+    write_page(rv["path"], fm, body)
+    sync_page(cfg, slug)
+
+
+def set_order(cfg, slug: str, stems: list[str]) -> None:
+    """Store the order of the linked papers (unknown stems are dropped)."""
+    have = {r["stem"] for r in paper_list(cfg, slug)}
+    keep = [s for s in dict.fromkeys(stems) if s in have]
+    _save_meta(cfg, slug, lambda fm: fm.__setitem__("paper_order", keep))
+
+
+def set_tags(cfg, slug: str, stem: str, tags: list[str]) -> list[str]:
+    """Replace one paper's tags within this project; returns the cleaned list."""
+    if stem not in {r["stem"] for r in paper_list(cfg, slug)}:
+        raise ProjectError("That paper is not in this project.")
+    clean = list(dict.fromkeys(t for t in (clean_tag(t) for t in tags) if t))[:12]
+
+    def edit(fm):
+        pt = dict(fm.get("paper_tags") or {})
+        if clean:
+            pt[stem] = clean
+        else:
+            pt.pop(stem, None)
+        fm["paper_tags"] = pt
+    _save_meta(cfg, slug, edit)
+    return clean
 
 
 def linked_papers(cfg, slug: str) -> list[dict]:
