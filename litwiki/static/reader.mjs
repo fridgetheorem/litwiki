@@ -32,7 +32,7 @@ const history = new History();
 const outbox = new Outbox();
 let tool = "hand", color = store.get("lw-ink-color", "#d62828"), width = 1.6, fingerOK = false;
 const TOOLS = { pen: { kind: "pen", opacity: 1, thinning: 0.5 }, highlighter: { kind: "highlighter", opacity: 0.35, thinning: 0 } };
-const widths = { pen: 1.6, highlighter: 14 };
+const widths = { pen: 1.6, highlighter: 14, text: 12 };
 
 const baseView = pv => pv.pdfPage.getViewport({ scale: 1 });   // scale 1, the page's own rotation: top-left origin, CSS px = points
 function strokePath(s, base) {
@@ -69,8 +69,9 @@ function ensureLayer(pv) {
   const wrap = document.createElement("div"); wrap.className = "inkLayer";
   const svg = document.createElementNS(SVGNS, "svg");
   svg.setAttribute("viewBox", `0 0 ${base.width} ${base.height}`); svg.setAttribute("preserveAspectRatio", "none");
-  wrap.append(svg); pv.div.append(wrap);
-  L = { svg, base, pv, wrap };
+  const tb = document.createElement("div"); tb.className = "tbLayer";
+  wrap.append(svg, tb); pv.div.append(wrap);
+  L = { svg, base, pv, wrap, tb };
   layers.set(n, L);
   wrap.addEventListener("pointerdown", ev => onDown(ev, L));
   paintPage(L);
@@ -78,11 +79,12 @@ function ensureLayer(pv) {
 }
 function paintPage(L) {
   L.svg.querySelectorAll("path:not(.live)").forEach(p => p.remove());
-  byPage(L.pv.id - 1).forEach(s => L.svg.append(strokeEl(s, L.base)));
+  L.tb.querySelectorAll(".tbx:not(.editing)").forEach(p => p.remove());
+  byPage(L.pv.id - 1).forEach(s => (s.kind === "text" ? L.tb.append(textEl(s, L)) : L.svg.append(strokeEl(s, L.base))));
 }
 const layerFor = page => layers.get(page + 1);
-function addLocal(s) { strokes.set(s.id, s); const L = layerFor(s.page); if (L && L.svg.isConnected) L.svg.append(strokeEl(s, L.base)); }
-function removeLocal(s) { strokes.delete(s.id); const L = layerFor(s.page); if (L) L.svg.querySelector(`path[data-id="${s.id}"]`)?.remove(); }
+function addLocal(s) { strokes.set(s.id, s); const L = layerFor(s.page); if (L && L.svg.isConnected) (s.kind === "text" ? L.tb.append(textEl(s, L)) : L.svg.append(strokeEl(s, L.base))); }
+function removeLocal(s) { strokes.delete(s.id); const L = layerFor(s.page); if (L) { L.svg.querySelector(`path[data-id="${s.id}"]`)?.remove(); L.tb.querySelector(`.tbx[data-id="${s.id}"]`)?.remove(); } }
 
 // ---------- drawing ----------
 function svgPoint(L, ev) {
@@ -93,6 +95,8 @@ function svgPoint(L, ev) {
 let drawing = null;
 function allowed(ev) { return ev.pointerType === "pen" || ev.pointerType === "mouse" || (ev.pointerType === "touch" && fingerOK); }
 function onDown(ev, L) {
+  if (ev.target.closest && ev.target.closest(".tbx")) return;      // a text box handles its own events
+  if (tool === "text") { textDown(ev, L); return; }
   if (tool === "hand" || !allowed(ev) || (ev.pointerType === "mouse" && ev.button !== 0)) return;
   const eraser = tool === "eraser" || (ev.pointerType === "pen" && (ev.buttons & 32));   // the pen's own eraser end/button
   const pt = svgPoint(L, ev); if (!pt) return;
@@ -151,8 +155,123 @@ function finish(cancelled) {
   history.push({ type: "add", items: [s] }); outbox.added(s); setSaved(false); scheduleSave(); updateButtons();
 }
 function applyOp(op) {   // undo/redo
+  if (op.type === "edit") { removeLocal(op.from); outbox.removed(op.from); strokes.set(op.to.id, op.to); addLocal(op.to); outbox.added(op.to); setSaved(false); scheduleSave(); updateButtons(); return; }
   for (const s of op.items) { if (op.type === "add") { strokes.set(s.id, s); addLocal(s); outbox.added(s); } else { removeLocal(s); outbox.removed(s); } }
   setSaved(false); scheduleSave(); updateButtons();
+}
+
+// ---------- text boxes ----------
+// A text box is an annotation of kind "text": `rect` = [x0,y0,x1,y1] in PDF user space, `width` = font size in points, `text`.
+// It is an HTML box over the page, sized in percentages and container-query units so it follows the zoom without any JS. A box is
+// never changed in place: typing, moving or resizing replaces it by a new item (one undo step), like the strokes.
+let editing = null;                    // {el, L, s|null, size, color} while a box has the cursor
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function textGeom(s, L) {              // view-space (top-left origin, points) x, y, w of a saved box
+  const [ax, ay] = L.base.convertToViewportPoint(s.rect[0], s.rect[1]), [bx, by] = L.base.convertToViewportPoint(s.rect[2], s.rect[3]);
+  return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax) };
+}
+function placeBox(d, L, x, y, w, size, col) {
+  const W = L.base.width, H = L.base.height;
+  d.style.left = (x / W * 100) + "%"; d.style.top = (y / H * 100) + "%"; d.style.width = (w / W * 100) + "%";
+  d.style.fontSize = `calc(${size / W * 100}cqw)`; d.style.color = col;
+}
+function boxEl(L, x, y, w, size, col, text, id) {
+  const d = document.createElement("div"); d.className = "tbx"; if (id) d.dataset.id = id;
+  const tt = document.createElement("div"); tt.className = "tt"; tt.textContent = text;
+  const tc = document.createElement("div"); tc.className = "tc";
+  const mv = document.createElement("button"); mv.type = "button"; mv.className = "mv"; mv.textContent = "⋮⋮"; mv.title = "Drag to move";
+  const rm = document.createElement("button"); rm.type = "button"; rm.textContent = "✕"; rm.title = "Delete this text box";
+  tc.append(mv, rm);
+  const rs = document.createElement("div"); rs.className = "rs"; rs.title = "Drag to change the width";
+  d.append(tc, tt, rs); placeBox(d, L, x, y, w, size, col);
+  return { d, tt, mv, rm, rs };
+}
+function textEl(s, L) {
+  const g = textGeom(s, L), { d, tt, mv, rm, rs } = boxEl(L, g.x, g.y, g.w, s.width, s.color, s.text, s.id);
+  d.addEventListener("click", e => { if (e.target.closest(".tc, .rs")) return; if (tool === "eraser") deleteText(s); else if (!editing) beginEdit(L, s); });
+  rm.addEventListener("click", e => { e.stopPropagation(); deleteText(s); });
+  mv.addEventListener("pointerdown", e => dragBox(e, L, s, d, "move"));
+  rs.addEventListener("pointerdown", e => dragBox(e, L, s, d, "size"));
+  return d;
+}
+function deleteText(s) { removeLocal(s); outbox.removed(s); history.push({ type: "del", items: [s] }); setSaved(false); scheduleSave(); updateButtons(); }
+function rectOf(L, x, y, w, hPx) {      // view-space box -> PDF user space rect; hPx is its rendered height in CSS px
+  const hPt = hPx / (L.tb.clientWidth / L.base.width);
+  const [ax, ay] = L.base.convertToPdfPoint(x, y), [bx, by] = L.base.convertToPdfPoint(x + w, y + hPt);
+  return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)].map(v => +v.toFixed(2));
+}
+function makeText(L, x, y, w, size, col, text, d) {
+  return { id: newId(), page: L.pv.id - 1, kind: "text", color: col, width: size, opacity: 1, paths: [], pressures: null, text,
+           rect: rectOf(L, x, y, w, d.offsetHeight), rot: L.base.rotation || 0 };
+}
+function replaceText(from, to) {        // one undo step: `from` becomes `to`
+  removeLocal(from); outbox.removed(from); addLocal(to); outbox.added(to);
+  history.push({ type: "edit", from, to }); setSaved(false); scheduleSave(); updateButtons();
+}
+function beginEdit(L, s, at) {          // s = an existing box, or null with at = {x, y} (view points) for a new one
+  if (editing) endEdit();
+  const g = s ? textGeom(s, L) : { x: at.x, y: at.y, w: clamp(L.base.width - at.x - 8, 60, 190) };
+  const size = s ? s.width : widths.text, col = s ? s.color : color;
+  let d, tt;
+  if (s) { d = L.tb.querySelector(`.tbx[data-id="${s.id}"]`); tt = d.querySelector(".tt"); }
+  else { ({ d, tt } = boxEl(L, g.x, g.y, g.w, size, col, "", null)); L.tb.append(d); }
+  d.classList.add("editing"); tt.contentEditable = "true"; tt.spellcheck = true;
+  editing = { el: d, tt, L, s, size, color: col, g };
+  tt.addEventListener("paste", e => { e.preventDefault(); document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain")); });
+  tt.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Escape") { e.preventDefault(); tt.blur(); } });
+  tt.addEventListener("focusout", () => setTimeout(() => { if (editing && editing.tt === tt && !d.contains(document.activeElement)) endEdit(); }, 0));
+  tt.focus();
+  const r = document.createRange(); r.selectNodeContents(tt); r.collapse(false);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+function endEdit() {
+  const e = editing; if (!e) return; editing = null;
+  const text = e.tt.innerText.replace(/\u00a0/g, " ").replace(/\s+$/, "");
+  const { x, y, w } = e.g;
+  if (e.s) {
+    if (!text) { deleteText(e.s); return; }
+    if (text === e.s.text && e.color === e.s.color && e.size === e.s.width) { e.el.classList.remove("editing"); e.tt.contentEditable = "false"; return; }
+    const to = makeText(e.L, x, y, w, e.size, e.color, text, e.el);
+    e.el.remove(); replaceText(e.s, to);
+  } else {
+    e.el.remove();
+    if (!text) return;
+    const s = makeText(e.L, x, y, w, e.size, e.color, text, e.el);
+    addLocal(s); history.push({ type: "add", items: [s] }); outbox.added(s); setSaved(false); scheduleSave(); updateButtons();
+  }
+}
+function dragBox(ev, L, s, d, mode) {   // move by the grip, or change the width by the right edge
+  if (ev.button !== undefined && ev.button !== 0) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const g = textGeom(s, L), k = L.tb.clientWidth / L.base.width, x0 = ev.clientX, y0 = ev.clientY;
+  let nx = g.x, ny = g.y, nw = g.w; const h = d.offsetHeight;
+  ev.target.setPointerCapture(ev.pointerId);
+  const mv = e => {
+    const dx = (e.clientX - x0) / k, dy = (e.clientY - y0) / k;
+    if (mode === "move") { nx = clamp(g.x + dx, 0, L.base.width - 10); ny = clamp(g.y + dy, 0, L.base.height - 6); }
+    else nw = clamp(g.w + dx, 20, L.base.width - g.x);
+    placeBox(d, L, nx, ny, nw, s.width, s.color);
+  };
+  const up = () => {
+    ev.target.removeEventListener("pointermove", mv); ev.target.removeEventListener("pointerup", up); ev.target.removeEventListener("pointercancel", up);
+    if (nx === g.x && ny === g.y && nw === g.w) return;
+    const to = { ...s, id: newId(), rect: rectOf(L, nx, ny, nw, d.offsetHeight || h) };
+    replaceText(s, to);
+  };
+  ev.target.addEventListener("pointermove", mv); ev.target.addEventListener("pointerup", up); ev.target.addEventListener("pointercancel", up);
+}
+function textDown(ev, L) {              // a tap (not a drag or a two-finger gesture) with the text tool puts a new box there
+  if (!ev.isPrimary || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+  const m = L.svg.getScreenCTM(); if (!m) return;
+  const x0 = ev.clientX, y0 = ev.clientY, t0 = ev.timeStamp;
+  const up = e => {
+    L.wrap.removeEventListener("pointerup", up); L.wrap.removeEventListener("pointercancel", cancel);
+    if (e.pointerId !== ev.pointerId || Math.hypot(e.clientX - x0, e.clientY - y0) > 8 || e.timeStamp - t0 > 700) return;
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    e.preventDefault(); beginEdit(L, null, { x: clamp(p.x, 0, L.base.width - 20), y: clamp(p.y - 6, 0, L.base.height - 10) });
+  };
+  const cancel = () => { L.wrap.removeEventListener("pointerup", up); L.wrap.removeEventListener("pointercancel", cancel); };
+  L.wrap.addEventListener("pointerup", up); L.wrap.addEventListener("pointercancel", cancel);
 }
 
 // ---------- saving ----------
@@ -217,24 +336,29 @@ container.addEventListener("pointercancel", ev => { if (ev.pointerType === "touc
 // ---------- toolbar ----------
 function setTool(t) {
   if (t !== "hand" && !$("showink").checked) { $("showink").checked = true; applyVisible(); }
+  if (editing) endEdit();
   tool = t;
-  if (TOOLS[t]) { width = widths[t]; $("width").value = width; }
+  const w = $("width");
+  if (t === "text") { w.min = 6; w.max = 48; w.step = 1; width = widths.text; w.value = width; w.title = "Font size"; }
+  else { w.min = 0.6; w.max = 30; w.step = 0.2; w.title = "Stroke width"; if (TOOLS[t]) { width = widths[t]; w.value = width; } }
   document.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   viewerEl.classList.toggle("drawing", t !== "hand");
   container.classList.toggle("drawmode", t !== "hand");
+  viewerEl.classList.toggle("textmode", t === "text");
   gestures.reset(); stopFling();
-  $("hint").textContent = t === "hand" ? "Hand: scroll, zoom and select text." :
+  $("hint").textContent = t === "text" ? "Text: click where the text goes, then type. Click a box to edit it, drag ⋮⋮ to move it or its right edge to resize; Esc or clicking elsewhere finishes." : t === "hand" ? "Hand: scroll, zoom and select text." :
     "Draw with a stylus or mouse. " + (fingerOK ? "A finger draws too." : "One finger scrolls; tap with two fingers to undo. Switch to Hand to zoom by pinching.");
 }
 function applyVisible() { const on = $("showink").checked; viewerEl.classList.toggle("ink-hidden", !on); store.set("lw-ink-visible:" + D.stem, on ? "1" : "0"); if (!on && tool !== "hand") setTool("hand"); }
-function updateButtons() { $("undo").disabled = !history.canUndo; $("redo").disabled = !history.canRedo; $("count").textContent = strokes.size ? strokes.size + " stroke" + (strokes.size > 1 ? "s" : "") : ""; }
+function updateButtons() { $("undo").disabled = !history.canUndo; $("redo").disabled = !history.canRedo; $("count").textContent = strokes.size ? strokes.size + " annotation" + (strokes.size > 1 ? "s" : "") : ""; }
 document.querySelectorAll("[data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
 $("undo").addEventListener("click", () => { const op = history.undo(); if (op) applyOp(op); });
 $("redo").addEventListener("click", () => { const op = history.redo(); if (op) applyOp(op); });
 $("showink").addEventListener("change", applyVisible);
 $("finger").addEventListener("change", () => { fingerOK = $("finger").checked; setTool(tool); });
-$("width").addEventListener("input", () => { width = +$("width").value; widths[tool === "highlighter" ? "highlighter" : "pen"] = width; });
-document.querySelectorAll("[data-color]").forEach(b => { b.style.background = b.dataset.color; b.addEventListener("click", () => { color = b.dataset.color; store.set("lw-ink-color", color); document.querySelectorAll("[data-color]").forEach(x => x.classList.toggle("on", x === b)); }); });
+$("width").addEventListener("input", () => { width = +$("width").value; widths[tool in widths ? tool : "pen"] = width; if (editing) { editing.size = width; editing.el.style.fontSize = `calc(${width / editing.L.base.width * 100}cqw)`; } });
+document.querySelectorAll("[data-color]").forEach(b => { b.style.background = b.dataset.color; b.addEventListener("pointerdown", e => { if (editing) e.preventDefault(); });   // keep the cursor in the text box
+  b.addEventListener("click", () => { color = b.dataset.color; if (editing) { editing.color = color; editing.el.style.color = color; } store.set("lw-ink-color", color); document.querySelectorAll("[data-color]").forEach(x => x.classList.toggle("on", x === b)); }); });
 addEventListener("keydown", ev => {
   if (isTyping(ev.target)) return;
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); const op = ev.shiftKey ? history.redo() : history.undo(); if (op) applyOp(op); }

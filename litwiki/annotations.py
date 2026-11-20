@@ -1,4 +1,4 @@
-"""The reader's own annotation layer: free-form pen and highlighter strokes drawn on a paper's PDF.
+"""The reader's own annotation layer: free-form pen and highlighter strokes and typed text boxes on a paper's PDF.
 
 Strokes are stored one row each in state.db (table `annotations`), in PDF user space (points, origin bottom-left, 0-based
 page index), the same coordinates Zotero uses for its ink annotations, so they can be exchanged with Zotero later. The browser
@@ -10,7 +10,8 @@ import re
 
 from .common import db
 
-KINDS = {"pen", "highlighter"}
+KINDS = {"pen", "highlighter", "text"}
+MAX_TEXT = 5000
 MAX_PER_PAPER = 20000
 MAX_PATHS, MAX_NUMBERS, MAX_OPS_BYTES = 40, 20000, 2_000_000
 _ID = re.compile(r"[0-9a-f]{8,32}")
@@ -52,6 +53,8 @@ def clean(a) -> dict:
         raise AnnotationError("Bad width or opacity.")
     if not (0.1 <= width <= 80 and 0.05 <= opacity <= 1):
         raise AnnotationError("Width or opacity out of range.")
+    if kind == "text":
+        return _clean_text(a, aid, page, color, width)
     paths = a.get("paths")
     if not isinstance(paths, list) or not 1 <= len(paths) <= MAX_PATHS:
         raise AnnotationError("A stroke needs between 1 and %d paths." % MAX_PATHS)
@@ -68,8 +71,34 @@ def clean(a) -> dict:
             "opacity": round(opacity, 2), "paths": paths, "pressures": pressures}
 
 
+def _clean_text(a: dict, aid: str, page: int, color: str, size: float) -> dict:
+    """A text box: `width` is the font size in points, `rect` = [x0,y0,x1,y1] in PDF user space (bottom-left origin),
+    `rot` the page's rotation when it was placed (0/90/180/270), so the text reads upright in the view it was typed in."""
+    text = a.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise AnnotationError("A text box needs some text.")
+    if len(text) > MAX_TEXT:
+        raise AnnotationError("That text box is over %d characters." % MAX_TEXT)
+    rect = _nums(a.get("rect"), "A text box's rectangle")
+    if len(rect) != 4:
+        raise AnnotationError("A text box's rectangle is [x0, y0, x1, y1].")
+    x0, y0, x1, y1 = min(rect[0], rect[2]), min(rect[1], rect[3]), max(rect[0], rect[2]), max(rect[1], rect[3])
+    if x1 - x0 < 4 or y1 - y0 < 2:
+        raise AnnotationError("That text box is too small.")
+    rot = a.get("rot", 0)
+    if isinstance(rot, bool) or rot not in (0, 90, 180, 270):
+        raise AnnotationError("Bad rotation.")
+    if not 4 <= size <= 72:
+        raise AnnotationError("Font size out of range.")
+    return {"id": aid, "page": page, "kind": "text", "color": color.lower(), "width": round(size, 2), "opacity": 1.0,
+            "paths": [], "pressures": None, "text": text, "rect": [x0, y0, x1, y1], "rot": rot}
+
+
 def _row(r) -> dict:
     d = json.loads(r["data"])
+    if r["kind"] == "text":
+        return {"id": r["id"], "page": r["page"], "kind": "text", "color": r["color"], "width": r["width"], "opacity": 1,
+                "paths": [], "pressures": None, "text": d["text"], "rect": d["rect"], "rot": d.get("rot", 0)}
     return {"id": r["id"], "page": r["page"], "kind": r["kind"], "color": r["color"], "width": r["width"],
             "opacity": r["opacity"], "paths": d["paths"], "pressures": d.get("pressures")}
 
@@ -100,7 +129,8 @@ def apply(stem: str, ops_json: str) -> dict:
     for a in adds:
         cur = con.execute("INSERT OR IGNORE INTO annotations(id, stem, page, kind, color, width, opacity, data) VALUES(?,?,?,?,?,?,?,?)",
                           (a["id"], stem, a["page"], a["kind"], a["color"], a["width"], a["opacity"],
-                           json.dumps({"paths": a["paths"], "pressures": a["pressures"]}, separators=(",", ":"))))
+                           json.dumps({"text": a["text"], "rect": a["rect"], "rot": a["rot"]} if a["kind"] == "text"
+                                      else {"paths": a["paths"], "pressures": a["pressures"]}, separators=(",", ":"))))
         added += cur.rowcount
     deleted = restored = 0
     for i in dels:    # only ever this paper's own rows, whatever ids the browser names
@@ -128,7 +158,15 @@ def annotated_pdf(pdf_path, strokes: list[dict]) -> bytes:
             if s["page"] >= doc.page_count:
                 continue
             page = doc[s["page"]]
-            m = page.transformation_matrix   # PDF user space -> PyMuPDF page space; add_ink_annot applies the page rotation itself
+            m = page.transformation_matrix
+            if s["kind"] == "text":
+                x0, y0, x1, y1 = s["rect"]
+                r = pymupdf.Rect(pymupdf.Point(x0, y0) * m, pymupdf.Point(x1, y1) * m).normalize()
+                # Text is laid out upright in the view only when it is rotated with the page (tested on all four rotations).
+                a = page.add_freetext_annot(r, s["text"], fontsize=s["width"], fontname="helv", text_color=_rgb(s["color"]),
+                                            rotate=page.rotation)
+                a.update()
+                continue   # PDF user space -> PyMuPDF page space; add_ink_annot applies the page rotation itself
             paths = [[tuple(pymupdf.Point(flat[i], flat[i + 1]) * m) for i in range(0, len(flat), 2)] for flat in s["paths"]]
             paths = [p if len(p) > 1 else p + [(p[0][0] + 0.01, p[0][1])] for p in paths]
             a = page.add_ink_annot(paths)
