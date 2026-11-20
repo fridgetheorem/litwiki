@@ -51,7 +51,7 @@ async def reader_script(request: Request) -> Response:
 mimetypes.add_type("text/javascript", ".mjs")   # ES modules must be served as JavaScript
 mimetypes.add_type("application/wasm", ".wasm")
 
-from . import annotations, ask as askmod, chat, concept, exclusions, manual, notes, profile, project, swipe, vault
+from . import annotations, ask as askmod, attachments, chat, concept, exclusions, manual, notes, profile, project, swipe, vault
 from .common import LOG_DIR, ROOT, STATE_DIR, db, load_config, log, read_page, setup_logging
 from .discover import approve, tick_items
 from .llm import spent
@@ -1269,6 +1269,31 @@ async def project_notes_post(request: Request) -> Response:
     return JSONResponse({"mtime": str(mtime)})
 
 
+async def project_image_post(request: Request) -> Response:
+    """A pasted or dropped image for the project's notes: stored in the vault, answered with the Markdown link to insert."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    f = request.state.form.get("image")
+    if f is None or not hasattr(f, "read"):
+        return JSONResponse({"error": "No image received."}, status_code=400)
+    data = await f.read()
+    try:
+        name, md = await run_in_threadpool(attachments.save, CFG["vault"], slug, data)
+    except attachments.ImageError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"name": name, "markdown": md})
+
+
+def project_image_get(request: Request) -> Response:
+    """Serve one stored image (to the note editor's thumbnails); only names this app generated are accepted."""
+    slug = request.path_params["slug"]
+    p = attachments.path_of(CFG["vault"], slug, request.path_params["name"])
+    if p is None:
+        return HTMLResponse("No such image.", status_code=404)
+    return FileResponse(p, headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
+
+
 def papers(request: Request) -> Response:
     v = CFG["vault"]
     q = request.query_params.get("q", "").lower().strip()
@@ -1501,6 +1526,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/chat/send", guard(chat_send), methods=["POST"]),
         Route("/app/project/{slug}/notes", guard(project_notes_get), methods=["GET"]),
         Route("/app/project/{slug}/notes", guard(project_notes_post), methods=["POST"]),
+        Route("/app/project/{slug}/images", guard(project_image_post), methods=["POST"]),
+        Route("/app/project/{slug}/images/{name}", guard(project_image_get), methods=["GET"]),
         Route("/app/swipe", guard(swipe_get), methods=["GET"]),
         Route("/app/swipe/decide", guard(swipe_decide), methods=["POST"]),
         Route("/app/swipe/commit", guard(swipe_commit), methods=["POST"]),

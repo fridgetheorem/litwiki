@@ -148,6 +148,9 @@ def _project_page(here: str, page, config) -> str:
     head = f'<p style="text-align:center;margin:1.2rem 0 1.6rem">{buttons}</p>'
     if archived:
         head += '<p style="text-align:center"><em>Archived project</em></p>'
+    # Pasted images are linked relative to the note (../../_attachments/...); this page is reviews/<slug>.md, one level
+    # below the vault root, and MkDocs copies the files and rewrites the link to the right relative URL.
+    note = note.replace("](../../_attachments/", "](../_attachments/")
     body = note or f"_No notes yet. [Write some]({base}/notes) in the web app; they will appear here._"
     return f"# {title}\n\n{head}\n\n{body}\n"
 
