@@ -4,6 +4,7 @@
 import * as pdfjsLib from "/app/static/vendor/pdfjs/build/pdf.min.mjs";
 import { EventBus, FindState, PDFViewer, PDFLinkService, PDFFindController } from "/app/static/vendor/pdfjs/web/pdf_viewer.mjs";
 import { getStroke } from "/app/static/vendor/perfect-freehand/index.mjs";
+import { TOOL_KEYS, UNDO_KEY, REDO_KEYS, actionFor, label } from "/app/static/shortcuts.mjs";
 import { newId, isTyping, TouchGestures, strokeHit, outlineToPath, findAttempts, History, Outbox } from "/app/static/ink-core.mjs";
 
 const D = JSON.parse(document.getElementById("reader-data").textContent);
@@ -359,11 +360,19 @@ $("finger").addEventListener("change", () => { fingerOK = $("finger").checked; s
 $("width").addEventListener("input", () => { width = +$("width").value; widths[tool in widths ? tool : "pen"] = width; if (editing) { editing.size = width; editing.el.style.fontSize = `calc(${width / editing.L.base.width * 100}cqw)`; } });
 document.querySelectorAll("[data-color]").forEach(b => { b.style.background = b.dataset.color; b.addEventListener("pointerdown", e => { if (editing) e.preventDefault(); });   // keep the cursor in the text box
   b.addEventListener("click", () => { color = b.dataset.color; if (editing) { editing.color = color; editing.el.style.color = color; } store.set("lw-ink-color", color); document.querySelectorAll("[data-color]").forEach(x => x.classList.toggle("on", x === b)); }); });
+// Keyboard shortcuts (the keys live in shortcuts.mjs); they are ignored while typing in a text box or the page field.
 addEventListener("keydown", ev => {
   if (isTyping(ev.target)) return;
-  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); const op = ev.shiftKey ? history.redo() : history.undo(); if (op) applyOp(op); }
-  else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") { ev.preventDefault(); const op = history.redo(); if (op) applyOp(op); }
+  const a = actionFor(ev);
+  if (!a) return;
+  ev.preventDefault();
+  if (a.tool) setTool(a.tool);
+  else { const op = a.undo ? history.undo() : history.redo(); if (op) applyOp(op); }
 });
+// Tooltips show the key: "Pen (Z)", "Undo (Ctrl+Z)".
+document.querySelectorAll("[data-tool]").forEach(b => { const k = TOOL_KEYS[b.dataset.tool]; if (k) b.title += ` (${label(k)})`; });
+$("undo").title = `Undo (Ctrl+${label(UNDO_KEY)})`;
+$("redo").title = `Redo (Ctrl+${label(REDO_KEYS[0] || UNDO_KEY)})`;
 $("prev").addEventListener("click", () => pdfViewer.previousPage());
 $("next").addEventListener("click", () => pdfViewer.nextPage());
 $("pageno").addEventListener("change", () => { const n = parseInt($("pageno").value, 10); if (n >= 1 && n <= pdfViewer.pagesCount) pdfViewer.currentPageNumber = n; });

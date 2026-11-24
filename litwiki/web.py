@@ -44,8 +44,10 @@ def static_version() -> str:
 
 
 async def reader_script(request: Request) -> Response:
-    """reader.mjs with its own import of ink-core.mjs versioned too (the page URL carries ?v=, the nested import cannot)."""
-    src = (STATIC_DIR / "reader.mjs").read_text(encoding="utf-8").replace('"/app/static/ink-core.mjs"', f'"/app/static/ink-core.mjs?v={static_version()}"')
+    """reader.mjs with its own imports (ink-core, shortcuts) versioned too: the page URL carries ?v=, the nested imports cannot."""
+    src = (STATIC_DIR / "reader.mjs").read_text(encoding="utf-8")
+    for mod in ("ink-core", "shortcuts"):
+        src = src.replace(f'"/app/static/{mod}.mjs"', f'"/app/static/{mod}.mjs?v={static_version()}"')
     return Response(src, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 mimetypes.add_type("text/javascript", ".mjs")   # ES modules must be served as JavaScript
