@@ -187,6 +187,8 @@ one row per stroke, in PDF coordinates like Zotero's ink annotations, so they ca
 Stylus handling is the browser's: litwiki only checks the pointer type and has no palm rejection of its own (the OS and browser do that). Stroke smoothing is
 [perfect-freehand](https://github.com/steveruizok/perfect-freehand). Both libraries are vendored under `litwiki/static/vendor/` (Apache-2.0 and MIT), so the reader works offline.
 
+**Keyboard shortcuts (desktop):** `A` hand, `Z` pen, `Q` highlighter, `W` text box, `E` eraser, `Ctrl/⌘+Z` undo, `Ctrl/⌘+Y` (or `Ctrl/⌘+Shift+Z`) redo. They are ignored while you type in a text box. To change them edit `litwiki/static/shortcuts.mjs` (one table), then `litwiki restart web` and reload the reader; the toolbar tooltips are generated from that table.
+
 **Text boxes:** the **T** tool puts typable text on the page: click where it goes, type, and click elsewhere (or press Esc) to finish. Click a box to edit it, drag its ⋮⋮ grip to move it,
 drag its right edge to change the width, ✕ (or the eraser) deletes it. The font size is the width slider and the colour is the swatches. Boxes are saved like strokes
 (same table, `kind = text`, with the rectangle in PDF coordinates), each change is one undo step, and they follow **My notes** show/hide.
