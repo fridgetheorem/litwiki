@@ -773,7 +773,7 @@ def project_papers(request: Request) -> Response:
         return HTMLResponse("No such project.", status_code=404)
     base = f"/app/project/{quote(slug)}"
     data = {"slug": slug, "add": base + "/add", "papers": project.paper_list(CFG, slug), "vocab": project.tag_list(CFG, slug)}
-    return _page_with(request, "project_list.html", slug, rv, "papers", data, __ADD__=base + "/add")
+    return _page_with(request, "project_list.html", slug, rv, "papers", data, __ADD__=base + "/add", __BIBDL__=base + "/bibtex.bib")
 
 
 def project_add(request: Request) -> Response:
@@ -857,6 +857,26 @@ async def project_tag_apply(request: Request) -> Response:
         return JSONResponse({"error": "Bad request."}, status_code=400)
     n = await run_in_threadpool(project.apply_tags, CFG, slug, assign)
     return JSONResponse({"changed": n, "vocab": project.tag_list(CFG, slug)})
+
+
+async def project_bibtex(request: Request) -> Response:
+    """BibTeX for the project's papers (all, or only the `stem` values posted: what the Papers tab currently shows)."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    form = request.state.form
+    stems = [str(x) for x in form.getlist("stem")] if form.get("subset") == "1" else None
+    text, n = await run_in_threadpool(project.bibtex, CFG, slug, stems)
+    return JSONResponse({"bibtex": text, "count": n})
+
+
+def project_bib_download(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return HTMLResponse("No such project.", status_code=404)
+    text, _ = project.bibtex(CFG, slug)
+    return Response(text, media_type="application/x-bibtex; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{slug}.bib"'})
 
 
 async def project_cards(request: Request) -> Response:
@@ -1559,6 +1579,8 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/add", guard(project_add), methods=["GET"]),
         Route("/app/project/{slug}/order", guard(project_order), methods=["POST"]),
         Route("/app/project/{slug}/tags", guard(project_tags), methods=["POST"]),
+        Route("/app/project/{slug}/bibtex", guard(project_bibtex), methods=["POST"]),
+        Route("/app/project/{slug}/bibtex.bib", guard(project_bib_download), methods=["GET"]),
         Route("/app/project/{slug}/tags/define", guard(project_tag_define), methods=["POST"]),
         Route("/app/project/{slug}/tags/delete", guard(project_tag_delete), methods=["POST"]),
         Route("/app/project/{slug}/tags/suggest", guard(project_tag_suggest), methods=["POST"]),
