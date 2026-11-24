@@ -7,6 +7,7 @@ against the project and says, in a few bullets, how it relates. Results are cach
 page costs nothing."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -283,7 +284,7 @@ def _save_meta(cfg, slug: str, edit) -> None:
     rv = get(cfg, slug)
     fm, body = read_page(rv["path"])
     edit(fm)
-    for k in ("paper_order", "paper_tags"):
+    for k in ("paper_order", "paper_tags", "tag_vocab"):
         if not fm.get(k):
             fm.pop(k, None)
     write_page(rv["path"], fm, body)
@@ -312,6 +313,139 @@ def set_tags(cfg, slug: str, stem: str, tags: list[str]) -> list[str]:
         fm["paper_tags"] = pt
     _save_meta(cfg, slug, edit)
     return clean
+
+
+def tag_list(cfg, slug: str) -> list[dict]:
+    """Every tag of this project with the number of papers using it: tags in use plus tags defined with no papers yet."""
+    counts: dict[str, int] = {}
+    for r in paper_list(cfg, slug):
+        for t in r["tags"]:
+            counts[t] = counts.get(t, 0) + 1
+    for t in get(cfg, slug).get("tag_vocab") or []:
+        if clean_tag(t):
+            counts.setdefault(clean_tag(t), 0)
+    return [{"tag": t, "count": n} for t, n in sorted(counts.items())]
+
+
+def define_tag(cfg, slug: str, tag: str) -> str:
+    """Create a tag that no paper has yet (it stays until deleted)."""
+    t = clean_tag(tag)
+    if not t:
+        raise ProjectError("A tag needs some letters or digits.")
+
+    def edit(fm):
+        fm["tag_vocab"] = sorted({*(clean_tag(x) for x in (fm.get("tag_vocab") or []) if clean_tag(x)), t})
+    _save_meta(cfg, slug, edit)
+    return t
+
+
+def delete_tag(cfg, slug: str, tag: str) -> int:
+    """Delete a tag from the project: untag every paper that has it and drop it from the defined tags. Returns how many papers lost it."""
+    t = clean_tag(tag)
+    hit = []
+
+    def edit(fm):
+        pt = {}
+        for stem, tags in (fm.get("paper_tags") or {}).items():
+            keep = [x for x in tags if clean_tag(x) != t]
+            if len(keep) != len(tags):
+                hit.append(stem)
+            if keep:
+                pt[stem] = keep
+        fm["paper_tags"] = pt
+        fm["tag_vocab"] = [x for x in (fm.get("tag_vocab") or []) if clean_tag(x) != t]
+    _save_meta(cfg, slug, edit)
+    return len(hit)
+
+
+# ---------- suggested tags (an LLM proposes; nothing is saved until the user applies) ----------
+
+TAG_BATCH = 12          # papers per model call
+TAGS_PER_PAPER = 4
+NEW_TAG_MIN_PAPERS = 2  # a new tag must be used by at least this many papers (when the project has that many)
+TAG_SYSTEM = """You file research papers under short topic tags for one literature review. Use ONLY the paper details supplied.
+- Prefer a tag from EXISTING TAGS whenever one fits. Invent a new tag only when no existing tag fits and the topic would
+  plausibly cover several papers in this project.
+- Tags are lowercase, one to three words, about the paper's topic, method or kind of contribution (never a year, author or venue).
+- Give each paper between 1 and 4 tags in all. Use each paper's id exactly as given."""
+TAG_SCHEMA = {"type": "object", "properties": {"papers": {"type": "array", "items": {
+    "type": "object", "properties": {"id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}},
+    "required": ["id", "tags"]}}}, "required": ["papers"]}
+
+
+def _tag_digest(cfg, stem: str) -> str:
+    fm, body = read_page(cfg["vault"] / vault.PAPERS / f"{stem}.md")
+    body = re.sub(r"\s+", " ", re.sub(r"^#.*$|^\*.*$|\[\[.*?\]\]", " ", body, flags=re.M)).strip()[:1200]
+    au = ", ".join(str(a) for a in (fm.get("authors") or []) if not str(a).strip().isdigit())[:120]
+    return f"[{stem}] {fm.get('title')} ({au}; {fm.get('venue') or 'n.p.'} {fm.get('year') or 'n.d.'})\n{body}"
+
+
+def suggest_tags(cfg, slug: str, only_untagged: bool = False) -> dict:
+    """Ask the model to tag the project's papers. Additive: proposals never include removing a tag. Returns
+    {"papers": [{stem, title, have, add}], "new_tags": [...], "cost": usd}; nothing is written."""
+    from .llm import claude, pick_model
+    rows = paper_list(cfg, slug)
+    if not rows:
+        raise ProjectError("This project has no papers to tag.")
+    todo = [r for r in rows if not (only_untagged and r["tags"])]
+    if not todo:
+        raise ProjectError("Every paper already has a tag.")
+    vocab = {t["tag"] for t in tag_list(cfg, slug)}
+    existing = set(vocab)
+    ref = f"tag:{slug}:{os.urandom(3).hex()}"
+    got: dict[str, list[str]] = {}
+    for i in range(0, len(todo), TAG_BATCH):
+        batch = todo[i:i + TAG_BATCH]
+        known = ", ".join(sorted(vocab)) or "(none yet: choose a small, consistent set)"
+        prompt = f"EXISTING TAGS: {known}\n\nPAPERS:\n\n" + "\n\n".join(_tag_digest(cfg, r["stem"]) for r in batch)
+        out = claude(cfg, prompt, system=TAG_SYSTEM, model=pick_model(cfg, "tag"), schema=TAG_SCHEMA, purpose="tag", ref=ref)
+        ids = {r["stem"] for r in batch}
+        for item in out.get("papers") or []:
+            if item.get("id") in ids:
+                tags = list(dict.fromkeys(t for t in (clean_tag(x) for x in item.get("tags") or []) if t))[:TAGS_PER_PAPER]
+                got[item["id"]] = tags
+                vocab.update(tags)               # the next batch sees the tags this one coined
+    # a paper keeps at most TAGS_PER_PAPER tags in all (its own count too), and a suggested tag must cover at least
+    # NEW_TAG_MIN_PAPERS papers once that cap is applied (or all of them, in a project with fewer papers)
+    need = min(NEW_TAG_MIN_PAPERS, len(rows))
+    add = {r["stem"]: [t for t in got.get(r["stem"], []) if t not in r["tags"]][:max(0, TAGS_PER_PAPER - len(r["tags"]))] for r in todo}
+    for _ in range(2):
+        use: dict[str, int] = {}
+        for stem, tags in add.items():
+            for t in tags:
+                use[t] = use.get(t, 0) + 1
+        have_n = {t["tag"]: t["count"] for t in tag_list(cfg, slug)}
+        drop = {t for t, n in use.items() if n + have_n.get(t, 0) < need}
+        if not drop:
+            break
+        add = {k: [t for t in v if t not in drop] for k, v in add.items()}
+    out_rows = [{"stem": r["stem"], "title": r["title"], "have": r["tags"], "add": add[r["stem"]]} for r in todo]
+    new_tags = {t for r in out_rows for t in r["add"] if t not in existing}
+    con = db()
+    cost = float(con.execute("SELECT COALESCE(SUM(usd),0) FROM spend WHERE ref=?", (ref,)).fetchone()[0])
+    return {"papers": out_rows, "new_tags": sorted(new_tags), "cost": round(cost, 4)}
+
+
+def apply_tags(cfg, slug: str, assign: dict) -> int:
+    """Add tags to papers, {stem: [tags]}, in one write. Never removes a tag; a paper ends with at most TAGS_PER_PAPER tags
+    (one that already has more keeps them all). Returns the number of papers changed."""
+    have = {r["stem"] for r in paper_list(cfg, slug)}
+    changed = []
+
+    def edit(fm):
+        pt = {k: list(v) for k, v in (fm.get("paper_tags") or {}).items()}
+        for stem, tags in assign.items():
+            if stem not in have or not isinstance(tags, list):
+                continue
+            cur = [clean_tag(t) for t in pt.get(stem, []) if clean_tag(t)]
+            new = list(dict.fromkeys([*cur, *(t for t in (clean_tag(x) for x in tags) if t)]))
+            new = new if len(new) <= len(cur) else cur + [t for t in new if t not in cur][:max(0, TAGS_PER_PAPER - len(cur))]
+            if new != cur:
+                pt[stem] = new
+                changed.append(stem)
+        fm["paper_tags"] = pt
+    _save_meta(cfg, slug, edit)
+    return len(changed)
 
 
 def linked_papers(cfg, slug: str) -> list[dict]:
