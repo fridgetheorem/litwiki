@@ -106,7 +106,7 @@ async function upload(file){
     t.value=t.value.replace(ph,j.markdown);t.dispatchEvent(new Event("input"));thumbs();
   }catch(e){gone("Could not add the image: "+e.message)}}
 const imgs=list=>[...(list||[])].filter(f=>f.type&&f.type.startsWith("image/"));
-t.addEventListener("paste",e=>{const cd=e.clipboardData,fs=imgs(cd&&cd.files);if(!fs.length||(cd.getData("text/plain")||"").trim())return;e.preventDefault();fs.forEach(upload)   // real text on the clipboard pastes as text});
+t.addEventListener("paste",e=>{const cd=e.clipboardData,fs=imgs(cd&&cd.files);if(!fs.length||(cd.getData("text/plain")||"").trim())return;e.preventDefault();fs.forEach(upload)});  /* real text on the clipboard pastes as text */
 t.addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();t.classList.add("drop")}});
 t.addEventListener("dragleave",()=>t.classList.remove("drop"));
 t.addEventListener("drop",e=>{t.classList.remove("drop");const fs=imgs(e.dataTransfer&&e.dataTransfer.files);if(!fs.length)return;e.preventDefault();fs.forEach(upload)});
