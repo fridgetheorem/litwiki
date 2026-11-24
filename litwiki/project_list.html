@@ -56,6 +56,7 @@ input.tin{font-size:.82rem;padding:.1rem .5rem;width:9rem}
 __NAV__<div class="pview">
 __TABS__
 <div class="bar"><input id="q" type="search" placeholder="Filter this project's papers"><span id="info" class="by"></span><span class="sp"></span>
+<button class="b sec" id="bib" type="button" title="Copy BibTeX entries for the papers shown (all of them unless you are filtering)">Copy BibTeX</button><a class="by" id="bibdl" href="__BIBDL__" title="Download every paper's entry as a .bib file" download>.bib</a>
 <button class="b sec" id="suggest" type="button" title="Ask the AI to tag your papers: you review the suggestions before anything is saved">Suggest tags…</button>
 <a class="b" href="__ADD__">+ Add papers</a></div>
 <div id="tagbar"></div>
@@ -161,6 +162,16 @@ function render(){
   e.replaceChildren();
   if(!papers.length){e.append("No papers in this project yet. ");const a=el("a","","Add papers");a.href=D.add;e.append(a,".")}else e.textContent="Nothing matches this filter."}
 $("q").oninput=e=>{q=e.target.value;render()};
+function copyText(t){
+  if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t);
+  return new Promise((ok,no)=>{const a=document.createElement("textarea");a.value=t;a.style.cssText="position:fixed;opacity:0";document.body.append(a);a.select();
+    try{document.execCommand("copy")?ok():no(new Error("Copy was blocked: use the .bib download instead."))}catch(e){no(e)}finally{a.remove()}})}
+$("bib").onclick=async()=>{
+  const sh=papers.filter(matches);
+  try{const r=await post(BASE+"/bibtex",{subset:"1",stem:sh.map(p=>p.stem)});
+    if(!r.count)return toast("No BibTeX to copy.");
+    await copyText(r.bibtex);toast("Copied "+r.count+" BibTeX entr"+(r.count===1?"y":"ies")+(sh.length<papers.length?" (shown papers only).":"."))}
+  catch(e){toast(e.message||"Copy failed.")}};
 /* Suggest tags: the model proposes, you tick what to keep; only additions are ever applied. */
 let sug=null;
 const dlg=$("dlg");

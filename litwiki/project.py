@@ -448,6 +448,19 @@ def apply_tags(cfg, slug: str, assign: dict) -> int:
     return len(changed)
 
 
+def bibtex(cfg, slug: str, stems: list[str] | None = None) -> tuple[str, int]:
+    """(BibTeX text, entry count) for the project's papers in the project's own order, or for just `stems` of them.
+    Citation keys are the library-wide ones, so they match the wiki's .bib file."""
+    from .bibtex import build_all
+    entries = build_all(cfg["vault"])
+    want = [r["stem"] for r in paper_list(cfg, slug)]
+    if stems is not None:
+        keep = set(stems)
+        want = [s for s in want if s in keep]
+    out = [entries[s] for s in want if s in entries]
+    return "\n\n".join(e.strip() for e in out) + ("\n" if out else ""), len(out)
+
+
 def linked_papers(cfg, slug: str) -> list[dict]:
     """Papers linked to the project (stem, title, year, authors), newest first: the notes page's link picker."""
     out = []
