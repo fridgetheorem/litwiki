@@ -71,7 +71,7 @@ __TABS__
 <script>
 (()=>{
 const D=JSON.parse(document.getElementById("data").textContent),CSRF="__CSRF__",BASE="/app/project/"+encodeURIComponent(D.slug);
-let papers=D.papers,q="",tag="",vocab=D.vocab||[];
+let papers=D.papers,q="",picked=new Set(),vocab=D.vocab||[];   // picked: the tags a paper must ALL have to be shown
 const $=id=>document.getElementById(id),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",4000)}
 async function post(path,params){
@@ -81,9 +81,9 @@ async function post(path,params){
   let j={};try{j=await r.json()}catch(_){}
   if(!r.ok)throw new Error(j.error||(r.status===403?"Session expired: reload this page.":"Server error ("+r.status+")"));
   return j}
-const filtering=()=>!!(q||tag);
+const filtering=()=>!!(q||picked.size);
 function matches(p){const w=q.toLowerCase().split(/\s+/).filter(Boolean),h=(p.title+" "+p.authors+" "+p.venue+" "+p.year+" "+p.tags.join(" ")).toLowerCase();
-  return w.every(x=>h.includes(x))&&(!tag||p.tags.includes(tag))}
+  return w.every(x=>h.includes(x))&&[...picked].every(t=>p.tags.includes(t))}
 async function saveOrder(){try{await post(BASE+"/order",{stem:papers.map(p=>p.stem)})}catch(e){toast(e.message)}}
 function move(i,j){if(j<0||j>=papers.length||i===j)return;const[x]=papers.splice(i,1);papers.splice(j,0,x);render();saveOrder()}
 /* Drag with pointer events (mouse, touch, pen). The insertion bar shows the gap the card will drop into. */
@@ -152,13 +152,15 @@ function row(p){
 function counts(){const m=new Map(vocab.map(v=>[v.tag,0]));papers.forEach(p=>p.tags.forEach(t=>m.set(t,(m.get(t)||0)+1)));return m}
 async function delTag(t,n){
   if(!confirm("Delete the tag “"+t+"”?"+(n?" It will be removed from "+n+" paper"+(n===1?"":"s")+".":"")))return;
-  try{await post(BASE+"/tags/delete",{tag:t});papers.forEach(p=>{p.tags=p.tags.filter(x=>x!==t)});vocab=vocab.filter(v=>v.tag!==t);if(tag===t)tag="";render();toast("Tag deleted.")}catch(e){toast(e.message)}}
+  try{await post(BASE+"/tags/delete",{tag:t});papers.forEach(p=>{p.tags=p.tags.filter(x=>x!==t)});vocab=vocab.filter(v=>v.tag!==t);picked.delete(t);render();toast("Tag deleted.")}catch(e){toast(e.message)}}
 async function defTag(v){try{const r=await post(BASE+"/tags/define",{tag:v});if(!vocab.some(x=>x.tag===r.tag))vocab.push({tag:r.tag,count:0});render();toast("Tag “"+r.tag+"” added.")}catch(e){toast(e.message)}}
 function render(){
   const cm=counts(),all=[...cm.keys()].sort(),tb=$("tagbar");tb.replaceChildren();
-  if(tag&&!all.includes(tag))tag="";
-  if(all.length){const c0=el("button","chip"+(tag?"":" on"),"All");c0.type="button";c0.onclick=()=>{tag="";render()};tb.append(c0)}
-  all.forEach(t=>{const w=el("span","chipw"+(tag===t?" on":"")),c=el("button","chip"+(tag===t?" on":""),t);c.type="button";c.onclick=()=>{tag=t;render()};
+  [...picked].forEach(t=>{if(!all.includes(t))picked.delete(t)});
+  if(all.length){const c0=el("button","chip"+(picked.size?"":" on"),"All");c0.type="button";c0.onclick=()=>{picked.clear();render()};tb.append(c0)}
+  all.forEach(t=>{const on=picked.has(t),w=el("span","chipw"+(on?" on":"")),c=el("button","chip"+(on?" on":""),t);c.type="button";
+    c.title="Click to show only this tag. Shift-click (or Ctrl/⌘-click) adds or removes a tag: papers with all the picked tags are shown.";
+    c.onclick=e=>{if(e.shiftKey||e.ctrlKey||e.metaKey){picked.has(t)?picked.delete(t):picked.add(t)}else if(picked.size===1&&on){picked.clear()}else{picked.clear();picked.add(t)}render()};
     c.append(el("span","ct",String(cm.get(t))));
     const x=el("button","cx","×");x.type="button";x.title="Delete this tag (removes it from every paper)";x.setAttribute("aria-label","Delete tag "+t);x.onclick=()=>delTag(t,cm.get(t));
     w.append(c,x);tb.append(w)});
@@ -168,7 +170,7 @@ function render(){
   dl.replaceChildren(...all.map(t=>{const o=document.createElement("option");o.value=t;return o}));
   const sh=papers.filter(matches),L=$("list"),active=document.activeElement&&document.activeElement.classList.contains("tin");
   L.replaceChildren($("ins"),...sh.map(row));
-  $("info").textContent=sh.length===papers.length?papers.length+" paper"+(papers.length===1?"":"s"):sh.length+" of "+papers.length+" shown (clear the filter to reorder)";
+  $("info").textContent=sh.length===papers.length?papers.length+" paper"+(papers.length===1?"":"s"):sh.length+" of "+papers.length+" shown"+(picked.size>1?" with all of: "+[...picked].join(" + "):"")+" (clear the filter to reorder)";
   const e=$("empty");e.style.display=sh.length?"none":"block";
   e.replaceChildren();
   if(!papers.length){e.append("No papers in this project yet. ");const a=el("a","","Add papers");a.href=D.add;e.append(a,".")}else e.textContent="Nothing matches this filter."}
