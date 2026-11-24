@@ -46,6 +46,9 @@ body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
 .tg{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center}
 .tg .t{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:0 .2rem 0 .6rem;display:inline-flex;align-items:center;gap:.15rem}
 .tg .t button{border:0;background:none;color:var(--mut);cursor:pointer;padding:0 .3rem;font-size:.9rem}
+.tg .t[draggable=true]{cursor:grab}.tg .t.over{outline:2px solid var(--acc)}
+.tg .t.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}.tg .t.pri button{color:var(--accfg);opacity:.8}
+.sg .pk{color:var(--acc);font-weight:700}
 .tg .t button:hover{color:var(--bad)}
 input.tin{font-size:.82rem;padding:.1rem .5rem;width:9rem}
 .row{display:flex;gap:.9rem;margin-top:auto;font-size:.84rem;flex-wrap:wrap}.row a,.row button{color:var(--acc);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-decoration:none}
@@ -127,8 +130,16 @@ function row(p){
   const b=el("div","bd"),h3=el("h3"),a=el("a","",p.title);a.href="/papers/"+encodeURIComponent(p.stem)+"/";h3.append(a);b.append(h3);
   const by=[p.authors,[p.venue,p.year].filter(Boolean).join(" ")].filter(Boolean).join(" · ");if(by)b.append(el("div","by",by));
   const tg=el("div","tg");
-  p.tags.forEach(t=>{const s=el("span","t",t),x=el("button","","×");x.type="button";x.title="Remove tag";x.onclick=()=>setTags(p,p.tags.filter(y=>y!==t));s.append(x);tg.append(s)});
-  const inp=el("input","tin");inp.placeholder="+ tag";inp.setAttribute("list","alltags");inp.maxLength=40;
+  /* The first tag is the paper's primary tag (its colour on the map). Drag a tag onto another to reorder; ☆ makes one primary. */
+  p.tags.forEach((t,k)=>{const s=el("span","t"+(k?"":" pri"),(k?"":"★ ")+t);s.draggable=true;
+    s.title=k?"Drag to reorder; ☆ makes it the primary tag":"Primary tag (colours this paper on the map). Drag another tag here to replace it.";
+    s.ondragstart=e=>{e.dataTransfer.setData("text/plain",String(k));e.dataTransfer.effectAllowed="move"};
+    s.ondragover=e=>{e.preventDefault();s.classList.add("over")};s.ondragleave=()=>s.classList.remove("over");
+    s.ondrop=e=>{e.preventDefault();s.classList.remove("over");const f=+e.dataTransfer.getData("text/plain");if(isNaN(f)||f===k)return;
+      const a=[...p.tags],[m]=a.splice(f,1);a.splice(k,0,m);setTags(p,a)};
+    if(k){const st=el("button","","☆");st.type="button";st.title="Make primary";st.setAttribute("aria-label","Make "+t+" the primary tag");st.onclick=()=>setTags(p,[t,...p.tags.filter(y=>y!==t)]);s.append(st)}
+    const x=el("button","","×");x.type="button";x.title="Remove tag";x.onclick=()=>setTags(p,p.tags.filter(y=>y!==t));s.append(x);tg.append(s)});
+  const full=p.tags.length>=4,inp=el("input","tin");inp.placeholder=full?"4 tags max":"+ tag";inp.disabled=full;inp.setAttribute("list","alltags");inp.maxLength=40;
   inp.onkeydown=e=>{if(e.key==="Enter"&&inp.value.trim()){e.preventDefault();setTags(p,[...p.tags,inp.value.trim()])}};
   tg.append(inp);b.append(tg);
   const r=el("div","row");
@@ -182,11 +193,13 @@ addEventListener("keydown",e=>{if(e.key==="Escape"&&dlg.style.display==="flex")d
 function showSug(r){
   sug=r;const body=$("dbody");body.replaceChildren();
   const any=r.papers.some(p=>p.add.length);
-  $("dsub").textContent=any?"Untick any tag you don't want, then apply. "+(r.new_tags.length?"New tags are marked and highlighted: "+r.new_tags.join(", ")+". ":"")+"Cost $"+r.cost.toFixed(3)+".":"Nothing to add: every paper already has fitting tags. (Cost $"+r.cost.toFixed(3)+".)";
+  $("dsub").textContent=any?"Untick any tag you don't want, then apply. ★ marks a paper's primary tag (the first suggested one, for papers with no tags yet). "+(r.new_tags.length?"New tags are marked and highlighted: "+r.new_tags.join(", ")+". ":"")+"Cost $"+r.cost.toFixed(3)+".":"Nothing to add: every paper already has fitting tags. (Cost $"+r.cost.toFixed(3)+".)";
   r.papers.filter(p=>p.add.length).forEach(p=>{const g=el("div","sg");g.append(el("div","st",p.title));
     if(p.have.length)g.append(el("div","have","Has: "+p.have.join(", ")));
-    p.add.forEach(t=>{const l=el("label",r.new_tags.includes(t)?"new":""),c=document.createElement("input");c.type="checkbox";c.checked=true;c.dataset.stem=p.stem;c.dataset.tag=t;
-      const tx=document.createElement(r.new_tags.includes(t)?"b":"span");tx.textContent=t;l.append(c,tx);g.append(l)});
+    const star=()=>{if(p.have.length)return;let f=true;g.querySelectorAll("label").forEach(l=>{const on=l.firstChild.checked,k=l.querySelector(".pk");if(k)k.textContent=on&&f?"★ ":"";if(on)f=false})};
+    p.add.forEach(t=>{const l=el("label",r.new_tags.includes(t)?"new":""),c=document.createElement("input");c.type="checkbox";c.checked=true;c.dataset.stem=p.stem;c.dataset.tag=t;c.onchange=star;
+      const tx=document.createElement(r.new_tags.includes(t)?"b":"span");tx.textContent=t;l.append(c,el("span","pk"),tx);g.append(l)});star();
+    if(p.have.length)g.querySelector(".have").textContent="Has: "+p.have.map((t,k)=>k?t:"★ "+t).join(", ")+" (primary stays "+p.have[0]+")";
     body.append(g)});
   $("onlyun").parentElement.style.display="none";$("dgo").textContent="Apply selected";$("dgo").disabled=!any;$("dlgt").textContent="Suggested tags"}
 $("dgo").onclick=async()=>{

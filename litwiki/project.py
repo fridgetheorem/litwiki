@@ -253,6 +253,7 @@ def save_notes(cfg, slug: str, text: str, expected_mtime: int) -> int:
     return p.stat().st_mtime_ns
 
 
+TAGS_PER_PAPER = 4     # at most this many tags on a paper; the first is its primary tag
 TAG = re.compile(r"[^\w\-/ ]+")
 
 
@@ -299,10 +300,14 @@ def set_order(cfg, slug: str, stems: list[str]) -> None:
 
 
 def set_tags(cfg, slug: str, stem: str, tags: list[str]) -> list[str]:
-    """Replace one paper's tags within this project; returns the cleaned list."""
-    if stem not in {r["stem"] for r in paper_list(cfg, slug)}:
+    """Replace one paper's tags within this project, in the given order (the first is the paper's primary tag);
+    returns the cleaned list. A paper may not be given more than TAGS_PER_PAPER tags (one that already has more keeps them)."""
+    rows = {r["stem"]: r for r in paper_list(cfg, slug)}
+    if stem not in rows:
         raise ProjectError("That paper is not in this project.")
-    clean = list(dict.fromkeys(t for t in (clean_tag(t) for t in tags) if t))[:12]
+    clean = list(dict.fromkeys(t for t in (clean_tag(t) for t in tags) if t))
+    if len(clean) > max(TAGS_PER_PAPER, len(rows[stem]["tags"])):
+        raise ProjectError(f"A paper can have at most {TAGS_PER_PAPER} tags.")
 
     def edit(fm):
         pt = dict(fm.get("paper_tags") or {})
@@ -361,13 +366,13 @@ def delete_tag(cfg, slug: str, tag: str) -> int:
 # ---------- suggested tags (an LLM proposes; nothing is saved until the user applies) ----------
 
 TAG_BATCH = 12          # papers per model call
-TAGS_PER_PAPER = 4
 NEW_TAG_MIN_PAPERS = 2  # a new tag must be used by at least this many papers (when the project has that many)
 TAG_SYSTEM = """You file research papers under short topic tags for one literature review. Use ONLY the paper details supplied.
 - Prefer a tag from EXISTING TAGS whenever one fits. Invent a new tag only when no existing tag fits and the topic would
   plausibly cover several papers in this project.
 - Tags are lowercase, one to three words, about the paper's topic, method or kind of contribution (never a year, author or venue).
-- Give each paper between 1 and 4 tags in all. Use each paper's id exactly as given."""
+- Give each paper between 1 and 4 tags in all. List the PRIMARY tag first: the one tag that best says what the paper is
+  about, since papers are coloured and grouped by it. Use each paper's id exactly as given."""
 TAG_SCHEMA = {"type": "object", "properties": {"papers": {"type": "array", "items": {
     "type": "object", "properties": {"id": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}},
     "required": ["id", "tags"]}}}, "required": ["papers"]}
@@ -419,7 +424,9 @@ def suggest_tags(cfg, slug: str, only_untagged: bool = False) -> dict:
         if not drop:
             break
         add = {k: [t for t in v if t not in drop] for k, v in add.items()}
-    out_rows = [{"stem": r["stem"], "title": r["title"], "have": r["tags"], "add": add[r["stem"]]} for r in todo]
+    out_rows = [{"stem": r["stem"], "title": r["title"], "have": r["tags"], "add": add[r["stem"]],
+                 # a paper that has no tags yet gets its first suggested tag as primary; otherwise its first existing tag stays primary
+                 "primary": (r["tags"] or add[r["stem"]] or [None])[0]} for r in todo]
     new_tags = {t for r in out_rows for t in r["add"] if t not in existing}
     con = db()
     cost = float(con.execute("SELECT COALESCE(SUM(usd),0) FROM spend WHERE ref=?", (ref,)).fetchone()[0])
