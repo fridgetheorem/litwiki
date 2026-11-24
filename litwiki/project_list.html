@@ -12,7 +12,22 @@ input[type=search],input.tin{padding:.35rem .6rem;border:1px solid var(--line);b
 input[type=search]{flex:1;min-width:10rem;max-width:22rem}
 .b{background:var(--acc);color:var(--accfg);border:0;border-radius:8px;padding:.4rem .9rem;font:inherit;font-weight:600;cursor:pointer}
 .b.sec{background:none;color:var(--acc);border:1px solid var(--acc)}
-#tagbar{display:flex;gap:.4rem;flex-wrap:wrap;padding:.6rem 1rem 0}
+#tagbar{display:flex;gap:.4rem;flex-wrap:wrap;padding:.6rem 1rem 0;align-items:center}
+.chipw{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.chipw .chip{border:0;border-radius:0}.chipw.on{border-color:var(--acc)}
+.chipw .cx{border:0;background:none;color:var(--mut);cursor:pointer;padding:0 .5rem 0 .1rem;font-size:.9rem}.chipw .cx:hover{color:var(--bad)}
+.chipw.on .cx{background:var(--acc);color:var(--accfg)}
+.chip .ct{opacity:.65;margin-left:.3rem;font-size:.75rem}
+#newtag{font-size:.82rem;padding:.1rem .6rem;width:8.5rem;border-radius:999px}
+#dlg{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:30;padding:1rem}
+#dlg .box{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;max-width:760px;width:100%;max-height:88vh;display:flex;flex-direction:column}
+#dlg header{padding:.9rem 1.1rem .5rem;font-weight:600}#dlg .sub{padding:0 1.1rem .5rem;color:var(--mut);font-size:.88rem}
+#dlg .body{overflow:auto;padding:.3rem 1.1rem;display:flex;flex-direction:column;gap:.55rem}
+#dlg footer{padding:.8rem 1.1rem;display:flex;gap:.6rem;align-items:center;border-top:1px solid var(--line)}
+.sg{border:1px solid var(--line);border-radius:10px;padding:.5rem .7rem;background:var(--card)}
+.sg .st{font-size:.92rem;font-weight:600}.sg .have{font-size:.8rem;color:var(--mut)}
+.sg label{display:inline-flex;align-items:center;gap:.25rem;margin:.25rem .7rem 0 0;font-size:.85rem;cursor:pointer}
+.sg label.new b{color:var(--acc);font-weight:600}.sg .none{font-size:.82rem;color:var(--mut)}
 .chip{font:inherit;font-size:.82rem;border:1px solid var(--line);border-radius:999px;padding:.1rem .65rem;background:none;color:var(--mut);cursor:pointer}
 .chip.on{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
 #list{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:.9rem;padding:1rem;align-items:stretch}
@@ -41,15 +56,18 @@ input.tin{font-size:.82rem;padding:.1rem .5rem;width:9rem}
 __NAV__<div class="pview">
 __TABS__
 <div class="bar"><input id="q" type="search" placeholder="Filter this project's papers"><span id="info" class="by"></span><span class="sp"></span>
+<button class="b sec" id="suggest" type="button" title="Ask the AI to tag your papers: you review the suggestions before anything is saved">Suggest tags…</button>
 <a class="b" href="__ADD__">+ Add papers</a></div>
 <div id="tagbar"></div>
 <div id="list"><div id="ins"></div></div><div id="ghost" class="p"></div><div id="empty" style="display:none"></div></div>
+<div id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgt"><div class="box"><header id="dlgt"></header><div class="sub" id="dsub"></div><div class="body" id="dbody"></div>
+<footer><label><input type="checkbox" id="onlyun"> Only papers with no tags</label><span style="flex:1"></span><button class="b sec" id="dcancel" type="button">Close</button><button class="b" id="dgo" type="button">Suggest</button></footer></div></div>
 <div id="toast" role="status"></div>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 (()=>{
 const D=JSON.parse(document.getElementById("data").textContent),CSRF="__CSRF__",BASE="/app/project/"+encodeURIComponent(D.slug);
-let papers=D.papers,q="",tag="";
+let papers=D.papers,q="",tag="",vocab=D.vocab||[];
 const $=id=>document.getElementById(id),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",4000)}
 async function post(path,params){
@@ -119,11 +137,21 @@ function row(p){
   const un=el("button","un","Remove from project");un.type="button";un.onclick=()=>unlink(p);r.append(un);
   b.append(r);d.append(b);
   return d}
+function counts(){const m=new Map(vocab.map(v=>[v.tag,0]));papers.forEach(p=>p.tags.forEach(t=>m.set(t,(m.get(t)||0)+1)));return m}
+async function delTag(t,n){
+  if(!confirm("Delete the tag “"+t+"”?"+(n?" It will be removed from "+n+" paper"+(n===1?"":"s")+".":"")))return;
+  try{await post(BASE+"/tags/delete",{tag:t});papers.forEach(p=>{p.tags=p.tags.filter(x=>x!==t)});vocab=vocab.filter(v=>v.tag!==t);if(tag===t)tag="";render();toast("Tag deleted.")}catch(e){toast(e.message)}}
+async function defTag(v){try{const r=await post(BASE+"/tags/define",{tag:v});if(!vocab.some(x=>x.tag===r.tag))vocab.push({tag:r.tag,count:0});render();toast("Tag “"+r.tag+"” added.")}catch(e){toast(e.message)}}
 function render(){
-  const all=[...new Set(papers.flatMap(p=>p.tags))].sort(),tb=$("tagbar");tb.replaceChildren();
+  const cm=counts(),all=[...cm.keys()].sort(),tb=$("tagbar");tb.replaceChildren();
   if(tag&&!all.includes(tag))tag="";
-  if(all.length){const c0=el("button","chip"+(tag?"":" on"),"All");c0.type="button";c0.onclick=()=>{tag="";render()};tb.append(c0);
-    all.forEach(t=>{const c=el("button","chip"+(tag===t?" on":""),t);c.type="button";c.onclick=()=>{tag=t;render()};tb.append(c)})}
+  if(all.length){const c0=el("button","chip"+(tag?"":" on"),"All");c0.type="button";c0.onclick=()=>{tag="";render()};tb.append(c0)}
+  all.forEach(t=>{const w=el("span","chipw"+(tag===t?" on":"")),c=el("button","chip"+(tag===t?" on":""),t);c.type="button";c.onclick=()=>{tag=t;render()};
+    c.append(el("span","ct",String(cm.get(t))));
+    const x=el("button","cx","×");x.type="button";x.title="Delete this tag (removes it from every paper)";x.setAttribute("aria-label","Delete tag "+t);x.onclick=()=>delTag(t,cm.get(t));
+    w.append(c,x);tb.append(w)});
+  const nt=el("input","tin");nt.id="newtag";nt.placeholder="+ new tag";nt.maxLength=40;nt.title="Define a tag before any paper uses it";
+  nt.onkeydown=e=>{if(e.key==="Enter"&&nt.value.trim()){e.preventDefault();defTag(nt.value.trim())}};tb.append(nt);
   let dl=$("alltags");if(!dl){dl=document.createElement("datalist");dl.id="alltags";document.body.append(dl)}
   dl.replaceChildren(...all.map(t=>{const o=document.createElement("option");o.value=t;return o}));
   const sh=papers.filter(matches),L=$("list"),active=document.activeElement&&document.activeElement.classList.contains("tin");
@@ -133,6 +161,32 @@ function render(){
   e.replaceChildren();
   if(!papers.length){e.append("No papers in this project yet. ");const a=el("a","","Add papers");a.href=D.add;e.append(a,".")}else e.textContent="Nothing matches this filter."}
 $("q").oninput=e=>{q=e.target.value;render()};
+/* Suggest tags: the model proposes, you tick what to keep; only additions are ever applied. */
+let sug=null;
+const dlg=$("dlg");
+function openDlg(){dlg.style.display="flex";$("dlgt").textContent="Suggest tags";$("dsub").textContent="The AI reads each paper's title, authors and summary, prefers your existing tags, and may coin new ones. Nothing is saved until you apply.";
+  $("dbody").replaceChildren();$("dgo").textContent="Suggest";$("dgo").disabled=false;$("onlyun").parentElement.style.display="";sug=null}
+$("suggest").onclick=openDlg;$("dcancel").onclick=()=>dlg.style.display="none";
+addEventListener("keydown",e=>{if(e.key==="Escape"&&dlg.style.display==="flex")dlg.style.display="none"});
+function showSug(r){
+  sug=r;const body=$("dbody");body.replaceChildren();
+  const any=r.papers.some(p=>p.add.length);
+  $("dsub").textContent=any?"Untick any tag you don't want, then apply. "+(r.new_tags.length?"New tags are marked and highlighted: "+r.new_tags.join(", ")+". ":"")+"Cost $"+r.cost.toFixed(3)+".":"Nothing to add: every paper already has fitting tags. (Cost $"+r.cost.toFixed(3)+".)";
+  r.papers.filter(p=>p.add.length).forEach(p=>{const g=el("div","sg");g.append(el("div","st",p.title));
+    if(p.have.length)g.append(el("div","have","Has: "+p.have.join(", ")));
+    p.add.forEach(t=>{const l=el("label",r.new_tags.includes(t)?"new":""),c=document.createElement("input");c.type="checkbox";c.checked=true;c.dataset.stem=p.stem;c.dataset.tag=t;
+      const tx=document.createElement(r.new_tags.includes(t)?"b":"span");tx.textContent=t;l.append(c,tx);g.append(l)});
+    body.append(g)});
+  $("onlyun").parentElement.style.display="none";$("dgo").textContent="Apply selected";$("dgo").disabled=!any;$("dlgt").textContent="Suggested tags"}
+$("dgo").onclick=async()=>{
+  const b=$("dgo");b.disabled=true;
+  if(!sug){b.textContent="Thinking…";$("dsub").textContent="Reading the papers: this can take a minute for a big project.";
+    try{showSug(await post(BASE+"/tags/suggest",{only_untagged:$("onlyun").checked?"1":"0"}))}catch(e){toast(e.message);$("dsub").textContent=e.message;b.textContent="Suggest";b.disabled=false}
+    return}
+  const assign={};dlg.querySelectorAll("input[data-stem]:checked").forEach(c=>{(assign[c.dataset.stem]=assign[c.dataset.stem]||[]).push(c.dataset.tag)});
+  try{const r=await post(BASE+"/tags/apply",{assign:JSON.stringify(assign)});
+    papers.forEach(p=>{const add=assign[p.stem]||[];p.tags=[...new Set([...p.tags,...add])].slice(0,12)});vocab=r.vocab;dlg.style.display="none";render();toast("Tagged "+r.changed+" paper"+(r.changed===1?"":"s")+".")}
+  catch(e){toast(e.message);b.disabled=false}};
 render();
 })();
 </script></body></html>

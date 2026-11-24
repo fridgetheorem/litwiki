@@ -772,7 +772,7 @@ def project_papers(request: Request) -> Response:
     if rv is None:
         return HTMLResponse("No such project.", status_code=404)
     base = f"/app/project/{quote(slug)}"
-    data = {"slug": slug, "add": base + "/add", "papers": project.paper_list(CFG, slug)}
+    data = {"slug": slug, "add": base + "/add", "papers": project.paper_list(CFG, slug), "vocab": project.tag_list(CFG, slug)}
     return _page_with(request, "project_list.html", slug, rv, "papers", data, __ADD__=base + "/add")
 
 
@@ -806,6 +806,57 @@ async def project_tags(request: Request) -> Response:
     except project.ProjectError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"tags": tags})
+
+
+async def project_tag_define(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    try:
+        tag = await run_in_threadpool(project.define_tag, CFG, slug, str(request.state.form.get("tag", "")))
+    except project.ProjectError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"tag": tag})
+
+
+async def project_tag_delete(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    n = await run_in_threadpool(project.delete_tag, CFG, slug, str(request.state.form.get("tag", "")))
+    return JSONResponse({"untagged": n})
+
+
+async def project_tag_suggest(request: Request) -> Response:
+    """Ask the model for tags (can take a while for big projects). Nothing is saved: the page shows the proposals for review."""
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    only = str(request.state.form.get("only_untagged", "")) == "1"
+    try:
+        out = await run_in_threadpool(project.suggest_tags, CFG, slug, only)
+    except (project.ProjectError, chat.ChatError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except askmod.BudgetExceeded as e:
+        return JSONResponse({"error": str(e)}, status_code=429)
+    except Exception as e:
+        log.exception("tag suggestion failed")
+        return JSONResponse({"error": f"Tagging failed: {e}"[:300]}, status_code=500)
+    return JSONResponse(out)
+
+
+async def project_tag_apply(request: Request) -> Response:
+    slug, rv = _project_or_404(request)
+    if rv is None:
+        return JSONResponse({"error": "No such project."}, status_code=404)
+    try:
+        assign = json.loads(str(request.state.form.get("assign", "{}")))
+        if not isinstance(assign, dict):
+            raise ValueError
+    except ValueError:
+        return JSONResponse({"error": "Bad request."}, status_code=400)
+    n = await run_in_threadpool(project.apply_tags, CFG, slug, assign)
+    return JSONResponse({"changed": n, "vocab": project.tag_list(CFG, slug)})
 
 
 async def project_cards(request: Request) -> Response:
@@ -1508,6 +1559,10 @@ def create_app(cfg) -> Starlette:
         Route("/app/project/{slug}/add", guard(project_add), methods=["GET"]),
         Route("/app/project/{slug}/order", guard(project_order), methods=["POST"]),
         Route("/app/project/{slug}/tags", guard(project_tags), methods=["POST"]),
+        Route("/app/project/{slug}/tags/define", guard(project_tag_define), methods=["POST"]),
+        Route("/app/project/{slug}/tags/delete", guard(project_tag_delete), methods=["POST"]),
+        Route("/app/project/{slug}/tags/suggest", guard(project_tag_suggest), methods=["POST"]),
+        Route("/app/project/{slug}/tags/apply", guard(project_tag_apply), methods=["POST"]),
         Route("/app/project/{slug}/cards", guard(project_cards), methods=["GET"]),
         Route("/app/project/{slug}/status", guard(project_status), methods=["GET"]),
         Route("/app/project/{slug}/analyze", guard(project_analyze), methods=["POST"]),
